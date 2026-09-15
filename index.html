@@ -434,7 +434,7 @@
 
       <div class="card">
         <h3 style="margin-bottom:8px;">Daily goals</h3>
-        <p class="hint" style="margin-bottom:10px;">Leave any field blank to hide it from the Log tab's progress bars.</p>
+        <p class="hint" style="margin-bottom:10px;">Leave any field blank to hide it from the Log tab's progress bars. Kcal and protein/carbs/fat stay in sync (4 / 4 / 9 kcal per gram): editing a macro recalculates kcal, and editing kcal rescales the macros to match.</p>
         <div class="row">
           <div class="field"><label for="goalKcal">Kcal</label><input type="number" id="goalKcal" inputmode="decimal" min="0" placeholder="e.g. 2000"></div>
           <div class="field"><label for="goalProtein">Protein (g)</label><input type="number" id="goalProtein" inputmode="decimal" min="0"></div>
@@ -1336,17 +1336,51 @@ modelInput.addEventListener("input", () => {
   saveSettings();
 });
 
-function wireGoalInput(input, key) {
+function recalcKcalGoal() {
+  const g = settings.goals;
+  if (g.protein == null && g.carbs == null && g.fat == null) return;
+  const kcal = Math.round((g.protein ?? 0) * 4 + (g.carbs ?? 0) * 4 + (g.fat ?? 0) * 9);
+  g.kcal = kcal;
+  goalKcal.value = kcal;
+}
+
+/* Editing the kcal goal directly scales the macro goals to match it,
+   keeping their existing calorie split (or falling back to a 30/40/30
+   protein/carbs/fat split when no macro goals are set yet). */
+function recalcMacrosFromKcal() {
+  const g = settings.goals;
+  if (g.kcal == null) return;
+  const kcal = g.kcal;
+  const curKcalFromMacros = (g.protein ?? 0) * 4 + (g.carbs ?? 0) * 4 + (g.fat ?? 0) * 9;
+  const ratios =
+    curKcalFromMacros > 0
+      ? {
+          protein: ((g.protein ?? 0) * 4) / curKcalFromMacros,
+          carbs: ((g.carbs ?? 0) * 4) / curKcalFromMacros,
+          fat: ((g.fat ?? 0) * 9) / curKcalFromMacros,
+        }
+      : { protein: 0.3, carbs: 0.4, fat: 0.3 };
+  g.protein = Math.round((kcal * ratios.protein) / 4);
+  g.carbs = Math.round((kcal * ratios.carbs) / 4);
+  g.fat = Math.round((kcal * ratios.fat) / 9);
+  goalProtein.value = g.protein;
+  goalCarbs.value = g.carbs;
+  goalFat.value = g.fat;
+}
+
+function wireGoalInput(input, key, opts = {}) {
   input.addEventListener("input", () => {
     settings.goals[key] = numOrNull(input.value);
+    if (opts.recalcKcal) recalcKcalGoal();
+    if (opts.recalcMacros) recalcMacrosFromKcal();
     saveSettings();
     renderTotals();
   });
 }
-wireGoalInput(goalKcal, "kcal");
-wireGoalInput(goalProtein, "protein");
-wireGoalInput(goalCarbs, "carbs");
-wireGoalInput(goalFat, "fat");
+wireGoalInput(goalKcal, "kcal", { recalcMacros: true });
+wireGoalInput(goalProtein, "protein", { recalcKcal: true });
+wireGoalInput(goalCarbs, "carbs", { recalcKcal: true });
+wireGoalInput(goalFat, "fat", { recalcKcal: true });
 goalWeight.addEventListener("input", () => {
   settings.goals.weight = numOrNull(goalWeight.value);
   saveSettings();
