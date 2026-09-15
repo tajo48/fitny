@@ -137,6 +137,9 @@
   .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
+  .totalsKcalGoal { font-size: 15px; color: #a5adce; }
+  .goalBar { width: 100%; height: 6px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 10px; }
+  .goalBar span { display: block; height: 100%; border-radius: 999px; }
   .macroBar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 10px; }
   .macroBar span { display: block; height: 100%; }
   .macroLegend { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #c6d0f5; }
@@ -392,7 +395,7 @@
         </div>
         <div class="field">
           <label for="modelInput">Model</label>
-          <input type="text" id="modelInput" placeholder="openai/gpt-4o-mini">
+          <input type="text" id="modelInput" placeholder="google/gemini-3.8-flash">
         </div>
         <p class="hint">
           No key ships with this app — get one at openrouter.ai/keys and paste it above.
@@ -400,6 +403,19 @@
           OpenRouter; it's never included in DB export/import. Pick any OpenRouter model slug that
           supports image input for photo analysis.
         </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:8px;">Daily goals</h3>
+        <p class="hint" style="margin-bottom:10px;">Leave any field blank to hide it from the Log tab's progress bars.</p>
+        <div class="row">
+          <div class="field"><label for="goalKcal">Kcal</label><input type="number" id="goalKcal" inputmode="decimal" min="0" placeholder="e.g. 2000"></div>
+          <div class="field"><label for="goalProtein">Protein (g)</label><input type="number" id="goalProtein" inputmode="decimal" min="0"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="goalCarbs">Carbs (g)</label><input type="number" id="goalCarbs" inputmode="decimal" min="0"></div>
+          <div class="field"><label for="goalFat">Fat (g)</label><input type="number" id="goalFat" inputmode="decimal" min="0"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -430,7 +446,7 @@
 
 const DB_KEY = "fitny_db_v1";
 const SETTINGS_KEY = "fitny_settings_v1";
-const DEFAULT_MODEL = "openai/gpt-4o-mini";
+const DEFAULT_MODEL = "google/gemini-3.8-flash";
 const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
 
@@ -451,15 +467,20 @@ function saveDB() {
   localStorage.setItem(DB_KEY, JSON.stringify(db));
 }
 
+function emptyGoals() {
+  return { kcal: null, protein: null, carbs: null, fat: null };
+}
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      return { apiKey: parsed.apiKey || "", model: parsed.model || DEFAULT_MODEL };
+      const goals = { ...emptyGoals(), ...(parsed.goals || {}) };
+      return { apiKey: parsed.apiKey || "", model: parsed.model || DEFAULT_MODEL, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL };
+  return { apiKey: "", model: DEFAULT_MODEL, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -584,6 +605,10 @@ const weightListEl = document.getElementById("weightList");
 const apiKeyInput = document.getElementById("apiKeyInput");
 const toggleKeyVis = document.getElementById("toggleKeyVis");
 const modelInput = document.getElementById("modelInput");
+const goalKcal = document.getElementById("goalKcal");
+const goalProtein = document.getElementById("goalProtein");
+const goalCarbs = document.getElementById("goalCarbs");
+const goalFat = document.getElementById("goalFat");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importFile = document.getElementById("importFile");
@@ -593,29 +618,48 @@ manualMeal.value = defaultMeal();
 aiMealSelect.value = defaultMeal();
 apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
+goalKcal.value = settings.goals.kcal ?? "";
+goalProtein.value = settings.goals.protein ?? "";
+goalCarbs.value = settings.goals.carbs ?? "";
+goalFat.value = settings.goals.fat ?? "";
 
 /* ============================================================
    Rendering — Log tab
    ============================================================ */
 
+function goalBarHtml(value, goal) {
+  if (!goal) return "";
+  const pct = Math.min(100, (value / goal) * 100);
+  const over = value > goal;
+  return `<div class="goalBar"><span style="width:${pct}%;background:${over ? "#e78284" : "#8caaee"}"></span></div>`;
+}
+
+function macroLegendItem(label, color, value, goal) {
+  const suffix = goal ? ` / ${goal} g` : " g";
+  return `<span><i class="dot" style="background:${color}"></i>${label} ${value.toFixed(0)}${suffix}</span>`;
+}
+
 function renderTotals() {
   const t = totalsFor(currentDate);
+  const g = settings.goals || emptyGoals();
   const pCal = t.protein * 4, cCal = t.carbs * 4, fCal = t.fat * 9;
   const calSum = pCal + cCal + fCal || 1;
+  const kcalRight = g.kcal ? `<span class="totalsKcalGoal">/ ${g.kcal} kcal</span>` : `<span class="totalsKcalLabel">kcal</span>`;
   totalsEl.innerHTML = `
     <div class="totalsTop">
       <span class="totalsKcal">${Math.round(t.kcal)}</span>
-      <span class="totalsKcalLabel">kcal</span>
+      ${kcalRight}
     </div>
+    ${goalBarHtml(t.kcal, g.kcal)}
     <div class="macroBar">
       <span style="width:${(pCal / calSum) * 100}%;background:#e78284"></span>
       <span style="width:${(cCal / calSum) * 100}%;background:#e5c890"></span>
       <span style="width:${(fCal / calSum) * 100}%;background:#a6d189"></span>
     </div>
     <div class="macroLegend">
-      <span><i class="dot" style="background:#e78284"></i>Protein ${t.protein.toFixed(0)} g</span>
-      <span><i class="dot" style="background:#e5c890"></i>Carbs ${t.carbs.toFixed(0)} g</span>
-      <span><i class="dot" style="background:#a6d189"></i>Fat ${t.fat.toFixed(0)} g</span>
+      ${macroLegendItem("Protein", "#e78284", t.protein, g.protein)}
+      ${macroLegendItem("Carbs", "#e5c890", t.carbs, g.carbs)}
+      ${macroLegendItem("Fat", "#a6d189", t.fat, g.fat)}
     </div>
   `;
 }
@@ -1131,6 +1175,18 @@ modelInput.addEventListener("input", () => {
   settings.model = modelInput.value.trim() || DEFAULT_MODEL;
   saveSettings();
 });
+
+function wireGoalInput(input, key) {
+  input.addEventListener("input", () => {
+    settings.goals[key] = numOrNull(input.value);
+    saveSettings();
+    renderTotals();
+  });
+}
+wireGoalInput(goalKcal, "kcal");
+wireGoalInput(goalProtein, "protein");
+wireGoalInput(goalCarbs, "carbs");
+wireGoalInput(goalFat, "fat");
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
   apiKeyInput.type = show ? "text" : "password";
