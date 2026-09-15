@@ -198,11 +198,13 @@
   .aiRow:first-of-type { border-top: none; }
   .aiRow input[type="text"], .aiRow input[type="number"] { font-size: 12px; padding: 6px 6px; }
 
-  /* ---------- weight tab ---------- */
-  .rangeSwitch { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  /* ---------- history tab ---------- */
+  .rangeSwitch { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 0; }
   .rangeSwitch button { flex: 1 1 auto; background: transparent; color: #a5adce; font-size: 13px; padding: 6px 8px 4px; }
   .rangeSwitch button.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
-  #weightChart { width: 100%; height: 240px; display: block; border-radius: 6px; }
+  #weightChart, #kcalChart, #macroChart { width: 100%; height: 220px; display: block; border-radius: 6px; }
+  .chartLegend { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #c6d0f5; margin-bottom: 8px; }
+  .chartLegend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .weightRow {
     display: flex;
     align-items: center;
@@ -276,7 +278,7 @@
     </div>
     <nav class="tabs">
       <button class="tab active" data-tab="log" type="button">Log</button>
-      <button class="tab" data-tab="weight" type="button">Weight</button>
+      <button class="tab" data-tab="history" type="button">History</button>
       <button class="tab" data-tab="settings" type="button">Settings</button>
     </nav>
   </header>
@@ -363,8 +365,8 @@
     </div>
   </section>
 
-  <!-- ===================== WEIGHT ===================== -->
-  <section id="tab-weight" class="tab-panel">
+  <!-- ===================== HISTORY ===================== -->
+  <section id="tab-history" class="tab-panel">
     <div class="card">
       <div class="rangeSwitch">
         <button data-range="14" type="button">2w</button>
@@ -373,10 +375,30 @@
         <button data-range="365" type="button">1y</button>
         <button data-range="0" type="button">All</button>
       </div>
-      <canvas id="weightChart" width="1200" height="480"></canvas>
     </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:8px;">Weight</h3>
+      <canvas id="weightChart" width="1200" height="420"></canvas>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:8px;">Calories</h3>
+      <canvas id="kcalChart" width="1200" height="420"></canvas>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:8px;">Protein / Carbs / Fat</h3>
+      <div class="chartLegend">
+        <span><i class="dot" style="background:#e78284"></i>Protein</span>
+        <span><i class="dot" style="background:#e5c890"></i>Carbs</span>
+        <span><i class="dot" style="background:#a6d189"></i>Fat</span>
+      </div>
+      <canvas id="macroChart" width="1200" height="420"></canvas>
+    </div>
+
     <div class="card" id="weightListCard">
-      <h3 style="margin-bottom:8px;">History</h3>
+      <h3 style="margin-bottom:8px;">Weight entries</h3>
       <div id="weightList"></div>
     </div>
   </section>
@@ -600,6 +622,10 @@ const aiResultsEl = document.getElementById("aiResults");
 
 const weightCanvas = document.getElementById("weightChart");
 const wctx = weightCanvas.getContext("2d");
+const kcalCanvas = document.getElementById("kcalChart");
+const kctx = kcalCanvas.getContext("2d");
+const macroCanvas = document.getElementById("macroChart");
+const mctx = macroCanvas.getContext("2d");
 const weightListEl = document.getElementById("weightList");
 
 const apiKeyInput = document.getElementById("apiKeyInput");
@@ -708,8 +734,8 @@ function render() {
   weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
   renderTotals();
   renderMeals();
-  if (activeTab === "weight") {
-    drawWeightChart();
+  if (activeTab === "history") {
+    drawAllCharts();
     renderWeightList();
   }
 }
@@ -992,7 +1018,7 @@ aiResultsEl.addEventListener("click", (e) => {
 });
 
 /* ============================================================
-   Weight tab
+   History tab — weight, calories, and macro charts
    ============================================================ */
 
 function weightEntries() {
@@ -1002,11 +1028,30 @@ function weightEntries() {
     .map((d) => ({ date: d, weight: db.days[d].weight }));
 }
 
+function dayItemCount(dateStr) {
+  const day = getDay(dateStr);
+  if (!day) return 0;
+  return MEALS.reduce((a, m) => a + (day.meals[m] ? day.meals[m].length : 0), 0);
+}
+
+function calorieEntries() {
+  return Object.keys(db.days)
+    .filter((d) => dayItemCount(d) > 0)
+    .sort()
+    .map((d) => ({ date: d, ...totalsFor(d) }));
+}
+
+function filterByRange(entries) {
+  if (currentRange <= 0) return entries;
+  const cutoff = shiftDate(todayIso(), -currentRange);
+  return entries.filter((e) => e.date >= cutoff);
+}
+
 function resizeCanvasForDPR(canvas) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const w = Math.max(1, Math.round((rect.width || canvas.clientWidth || 300) * dpr));
-  const h = Math.max(1, Math.round((rect.height || canvas.clientHeight || 240) * dpr));
+  const h = Math.max(1, Math.round((rect.height || canvas.clientHeight || 220) * dpr));
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;
     canvas.height = h;
@@ -1014,88 +1059,168 @@ function resizeCanvasForDPR(canvas) {
   return dpr;
 }
 
-function drawWeightChart() {
-  const dpr = resizeCanvasForDPR(weightCanvas);
-  const w = weightCanvas.width, h = weightCanvas.height;
-  wctx.clearRect(0, 0, w, h);
-  wctx.fillStyle = "#303446";
-  wctx.fillRect(0, 0, w, h);
+/* Generic time-series line chart: 1..N colored series, optional dashed goal
+   line, shared across the weight/calories/macro cards below. */
+function drawTimeSeriesChart(canvas, ctx, config) {
+  const {
+    series,
+    goal = null,
+    goalColor = "#e78284",
+    minAtZero = false,
+    valueFmt = (v) => v.toFixed(1),
+    unit = "",
+    emptyText = "No data in this range",
+    showLatest = true,
+  } = config;
 
-  let entries = weightEntries();
-  if (currentRange > 0) {
-    const cutoff = shiftDate(todayIso(), -currentRange);
-    entries = entries.filter((e) => e.date >= cutoff);
-  }
+  const dpr = resizeCanvasForDPR(canvas);
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#303446";
+  ctx.fillRect(0, 0, w, h);
 
-  if (!entries.length) {
-    wctx.fillStyle = "#a5adce";
-    wctx.font = `${14 * dpr}px Verdana, sans-serif`;
-    wctx.textAlign = "center";
-    wctx.textBaseline = "middle";
-    wctx.fillText("No weight logged in this range", w / 2, h / 2);
+  const nonEmpty = series.filter((s) => s.points.length);
+  if (!nonEmpty.length) {
+    ctx.fillStyle = "#a5adce";
+    ctx.font = `${14 * dpr}px Verdana, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(emptyText, w / 2, h / 2);
     return;
   }
 
   const padL = 52 * dpr, padR = 16 * dpr, padT = 34 * dpr, padB = 26 * dpr;
-  const values = entries.map((e) => e.weight);
-  let min = Math.min(...values), max = Math.max(...values);
-  if (min === max) { min -= 1; max += 1; }
-  const pad = (max - min) * 0.15 || 1;
-  min -= pad;
-  max += pad;
 
-  const t0 = isoToDate(entries[0].date).getTime();
-  const t1 = isoToDate(entries[entries.length - 1].date).getTime();
+  let allValues = nonEmpty.reduce((acc, s) => acc.concat(s.points.map((p) => p.y)), []);
+  if (goal != null) allValues = allValues.concat([goal]);
+  let min = minAtZero ? 0 : Math.min(...allValues);
+  let max = Math.max(...allValues);
+  if (min === max) max = min + 1;
+  const vPad = (max - min) * 0.15 || 1;
+  if (!minAtZero) min -= vPad;
+  max += vPad;
+
+  let allDates = nonEmpty.reduce((acc, s) => acc.concat(s.points.map((p) => p.date)), []);
+  allDates.sort();
+  const t0 = isoToDate(allDates[0]).getTime();
+  const t1 = isoToDate(allDates[allDates.length - 1]).getTime();
   const tSpan = Math.max(1, t1 - t0);
 
   const x = (iso) => padL + ((isoToDate(iso).getTime() - t0) / tSpan) * (w - padL - padR);
   const y = (v) => h - padB - ((v - min) / (max - min)) * (h - padT - padB);
 
-  wctx.strokeStyle = "#414559";
-  wctx.lineWidth = 1 * dpr;
-  wctx.fillStyle = "#a5adce";
-  wctx.font = `${12 * dpr}px Verdana, sans-serif`;
-  wctx.textAlign = "right";
-  wctx.textBaseline = "middle";
-  [min + pad, (min + max) / 2, max - pad].forEach((v) => {
+  ctx.strokeStyle = "#414559";
+  ctx.lineWidth = 1 * dpr;
+  ctx.fillStyle = "#a5adce";
+  ctx.font = `${12 * dpr}px Verdana, sans-serif`;
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  [min, (min + max) / 2, max].forEach((v) => {
     const yy = y(v);
-    wctx.beginPath();
-    wctx.moveTo(padL, yy);
-    wctx.lineTo(w - padR, yy);
-    wctx.stroke();
-    wctx.fillText(v.toFixed(1), padL - 8 * dpr, yy);
+    ctx.beginPath();
+    ctx.moveTo(padL, yy);
+    ctx.lineTo(w - padR, yy);
+    ctx.stroke();
+    ctx.fillText(valueFmt(v), padL - 8 * dpr, yy);
   });
 
-  if (entries.length > 1) {
-    wctx.beginPath();
-    entries.forEach((e, i) => {
-      const px = x(e.date), py = y(e.weight);
-      if (i === 0) wctx.moveTo(px, py);
-      else wctx.lineTo(px, py);
-    });
-    wctx.strokeStyle = "#8caaee";
-    wctx.lineWidth = 2.5 * dpr;
-    wctx.lineJoin = "round";
-    wctx.lineCap = "round";
-    wctx.stroke();
+  if (goal != null) {
+    const gy = y(goal);
+    ctx.save();
+    ctx.setLineDash([6 * dpr, 5 * dpr]);
+    ctx.strokeStyle = goalColor;
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    ctx.moveTo(padL, gy);
+    ctx.lineTo(w - padR, gy);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = goalColor;
+    ctx.font = `${11 * dpr}px Verdana, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(`Goal ${valueFmt(goal)}${unit}`, padL + 4 * dpr, gy - 3 * dpr);
   }
 
-  entries.forEach((e) => {
-    wctx.beginPath();
-    wctx.arc(x(e.date), y(e.weight), 3.5 * dpr, 0, Math.PI * 2);
-    wctx.fillStyle = "#8caaee";
-    wctx.fill();
-    wctx.lineWidth = 1.5 * dpr;
-    wctx.strokeStyle = "#232634";
-    wctx.stroke();
-  });
+  for (const s of nonEmpty) {
+    if (s.points.length > 1) {
+      ctx.beginPath();
+      s.points.forEach((p, i) => {
+        const px = x(p.date), py = y(p.y);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      });
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = 2.5 * dpr;
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.stroke();
+    }
+    s.points.forEach((p) => {
+      ctx.beginPath();
+      ctx.arc(x(p.date), y(p.y), 3 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      ctx.fill();
+      ctx.lineWidth = 1.3 * dpr;
+      ctx.strokeStyle = "#232634";
+      ctx.stroke();
+    });
+  }
 
-  const last = entries[entries.length - 1];
-  wctx.fillStyle = "#c6d0f5";
-  wctx.font = `${22 * dpr}px "Bebas Neue", Impact, sans-serif`;
-  wctx.textAlign = "left";
-  wctx.textBaseline = "top";
-  wctx.fillText(`${last.weight.toFixed(1)} kg`, padL, 4 * dpr);
+  if (showLatest && nonEmpty.length === 1) {
+    const pts = nonEmpty[0].points;
+    const last = pts[pts.length - 1];
+    ctx.fillStyle = "#c6d0f5";
+    ctx.font = `${20 * dpr}px "Bebas Neue", Impact, sans-serif`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(`${valueFmt(last.y)}${unit}`, padL, 4 * dpr);
+  }
+}
+
+function drawWeightChart() {
+  const entries = filterByRange(weightEntries());
+  drawTimeSeriesChart(weightCanvas, wctx, {
+    series: [{ color: "#8caaee", points: entries.map((e) => ({ date: e.date, y: e.weight })) }],
+    valueFmt: (v) => v.toFixed(1),
+    unit: " kg",
+    emptyText: "No weight logged in this range",
+  });
+}
+
+function drawKcalChart() {
+  const entries = filterByRange(calorieEntries());
+  drawTimeSeriesChart(kcalCanvas, kctx, {
+    series: [{ color: "#8caaee", points: entries.map((e) => ({ date: e.date, y: e.kcal })) }],
+    goal: settings.goals.kcal || null,
+    goalColor: "#e78284",
+    minAtZero: true,
+    valueFmt: (v) => String(Math.round(v)),
+    unit: " kcal",
+    emptyText: "No calories logged in this range",
+  });
+}
+
+function drawMacroChart() {
+  const entries = filterByRange(calorieEntries());
+  drawTimeSeriesChart(macroCanvas, mctx, {
+    series: [
+      { color: "#e78284", points: entries.map((e) => ({ date: e.date, y: e.protein })) },
+      { color: "#e5c890", points: entries.map((e) => ({ date: e.date, y: e.carbs })) },
+      { color: "#a6d189", points: entries.map((e) => ({ date: e.date, y: e.fat })) },
+    ],
+    minAtZero: true,
+    valueFmt: (v) => String(Math.round(v)),
+    unit: " g",
+    showLatest: false,
+    emptyText: "No macros logged in this range",
+  });
+}
+
+function drawAllCharts() {
+  drawWeightChart();
+  drawKcalChart();
+  drawMacroChart();
 }
 
 function renderWeightList() {
@@ -1136,13 +1261,16 @@ document.querySelectorAll(".rangeSwitch button").forEach((btn) => {
   btn.addEventListener("click", () => {
     currentRange = Number(btn.dataset.range);
     document.querySelectorAll(".rangeSwitch button").forEach((b) => b.classList.toggle("active", b === btn));
-    drawWeightChart();
+    drawAllCharts();
   });
 });
 
-new ResizeObserver(() => { if (activeTab === "weight") drawWeightChart(); }).observe(weightCanvas);
+const chartResizeObserver = new ResizeObserver(() => { if (activeTab === "history") drawAllCharts(); });
+chartResizeObserver.observe(weightCanvas);
+chartResizeObserver.observe(kcalCanvas);
+chartResizeObserver.observe(macroCanvas);
 if (document.fonts) {
-  document.fonts.load('22px "Bebas Neue"').then(() => { if (activeTab === "weight") drawWeightChart(); }).catch(() => {});
+  document.fonts.load('20px "Bebas Neue"').then(() => { if (activeTab === "history") drawAllCharts(); }).catch(() => {});
 }
 
 /* ============================================================
@@ -1156,8 +1284,8 @@ tabButtons.forEach((btn) => {
     activeTab = btn.dataset.tab;
     tabButtons.forEach((b) => b.classList.toggle("active", b === btn));
     tabPanels.forEach((p) => p.classList.toggle("active", p.id === "tab-" + activeTab));
-    if (activeTab === "weight") {
-      drawWeightChart();
+    if (activeTab === "history") {
+      drawAllCharts();
       renderWeightList();
     }
   });
