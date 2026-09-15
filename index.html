@@ -363,7 +363,10 @@
           <img id="aiPreview" hidden alt="Selected food photo">
         </div>
         <button id="aiClearImage" type="button" class="secondary small" hidden>Remove photo</button>
-        <button id="aiAnalyze" type="button">Analyze with AI</button>
+        <div class="row" style="flex-wrap:nowrap;">
+          <button id="aiAnalyze" type="button">Analyze with AI</button>
+          <button id="aiCancel" type="button" class="danger" hidden>Cancel</button>
+        </div>
         <p class="hint" id="aiStatus"></p>
         <div id="aiResults" hidden></div>
       </div>
@@ -626,6 +629,7 @@ const aiImageInput = document.getElementById("aiImageInput");
 const aiPreview = document.getElementById("aiPreview");
 const aiClearImageBtn = document.getElementById("aiClearImage");
 const aiAnalyzeBtn = document.getElementById("aiAnalyze");
+const aiCancelBtn = document.getElementById("aiCancel");
 const aiStatus = document.getElementById("aiStatus");
 const aiResultsEl = document.getElementById("aiResults");
 
@@ -869,7 +873,7 @@ function clearAiImage() {
 }
 aiClearImageBtn.addEventListener("click", clearAiImage);
 
-async function callOpenRouter(basePayload) {
+async function callOpenRouter(basePayload, signal) {
   const attempt = (payload) =>
     fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -880,6 +884,7 @@ async function callOpenRouter(basePayload) {
         "X-Title": "Fitny",
       },
       body: JSON.stringify(payload),
+      signal,
     });
 
   let res = await attempt({ ...basePayload, response_format: { type: "json_object" } });
@@ -924,7 +929,7 @@ function parseItemsFromText(raw) {
   }));
 }
 
-async function analyzeWithAI(text, imageDataUrl) {
+async function analyzeWithAI(text, imageDataUrl, signal) {
   if (!settings.apiKey) throw new Error("Add your OpenRouter API key in Settings first.");
   const content = [
     { type: "text", text: text?.trim() ? text.trim() : "Identify this food and estimate its nutrition facts." },
@@ -940,10 +945,12 @@ async function analyzeWithAI(text, imageDataUrl) {
     tools: [{ type: "openrouter:web_search" }],
   };
 
-  const data = await callOpenRouter(basePayload);
+  const data = await callOpenRouter(basePayload, signal);
   const raw = data?.choices?.[0]?.message?.content ?? "";
   return parseItemsFromText(raw);
 }
+
+let aiAbortController = null;
 
 aiAnalyzeBtn.addEventListener("click", async () => {
   aiStatus.textContent = "";
@@ -955,20 +962,28 @@ aiAnalyzeBtn.addEventListener("click", async () => {
     aiStatus.textContent = "Add a description or a photo first.";
     return;
   }
-  aiAnalyzeBtn.disabled = true;
+  aiAbortController = new AbortController();
+  aiAnalyzeBtn.hidden = true;
+  aiCancelBtn.hidden = false;
   aiStatus.textContent = "Analyzing…";
   try {
-    const items = await analyzeWithAI(aiText.value, aiImageDataUrl);
+    const items = await analyzeWithAI(aiText.value, aiImageDataUrl, aiAbortController.signal);
     aiPending = items;
     renderAiResults();
     aiStatus.textContent = `Found ${items.length} item(s) — review and add.`;
   } catch (err) {
     aiPending = [];
     renderAiResults();
-    aiStatus.textContent = "Error: " + err.message;
+    aiStatus.textContent = err.name === "AbortError" ? "Analysis cancelled." : "Error: " + err.message;
   } finally {
-    aiAnalyzeBtn.disabled = false;
+    aiAnalyzeBtn.hidden = false;
+    aiCancelBtn.hidden = true;
+    aiAbortController = null;
   }
+});
+
+aiCancelBtn.addEventListener("click", () => {
+  if (aiAbortController) aiAbortController.abort();
 });
 
 function aiRowHtml(it, i) {
