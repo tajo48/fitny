@@ -639,6 +639,34 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+/* There is no exact formula for GI from macros alone — it's a measured
+   physiological response driven by starch structure, fiber, and food matrix,
+   none of which grams of protein/carbs/fat capture. This is a deliberately
+   simple, admittedly rough stand-in for items nobody tagged: start from a
+   "typical mixed-carbohydrate food" baseline (~60) and let fat/protein blunt
+   it, mirroring the well-documented (if imprecise) effect that added
+   fat/protein slows gastric emptying and dampens the glucose response.
+   Purely to keep the day's average from just ignoring untagged items — an
+   explicit GI (typed in, or returned by the AI) always wins over this. */
+function estimateGI(it) {
+  const carbs = num(it.carbs);
+  if (carbs <= 0) return null;
+  const fatRatio = num(it.fat) / carbs;
+  const proteinRatio = num(it.protein) / carbs;
+  let gi = 60;
+  gi -= Math.min(20, fatRatio * 18);
+  gi -= Math.min(15, proteinRatio * 12);
+  return Math.round(Math.max(15, Math.min(90, gi)));
+}
+
+/* Resolves the GI to actually use for an item: its own tagged value if set,
+   otherwise a macro-based guess (flagged so the UI can show it's estimated). */
+function effectiveGI(it) {
+  if (it.gi != null && Number.isFinite(it.gi)) return { value: it.gi, guessed: false };
+  const guess = estimateGI(it);
+  return guess != null ? { value: guess, guessed: true } : null;
+}
+
 function totalsFor(dateStr) {
   const day = getDay(dateStr);
   const t = { kcal: 0, protein: 0, carbs: 0, fat: 0, avgGI: null };
@@ -652,10 +680,14 @@ function totalsFor(dateStr) {
       t.carbs += num(it.carbs);
       t.fat += num(it.fat);
       // A meal's glycemic impact is dominated by its carb-heavy items, so the
-      // day's GI is the carb-weighted average, not a flat mean across items.
-      if (it.gi != null && num(it.carbs) > 0) {
-        giWeighted += it.gi * num(it.carbs);
-        giCarbBase += num(it.carbs);
+      // day's GI is the carb-weighted average (tagged or guessed), not a
+      // flat mean across items.
+      if (num(it.carbs) > 0) {
+        const eff = effectiveGI(it);
+        if (eff) {
+          giWeighted += eff.value * num(it.carbs);
+          giCarbBase += num(it.carbs);
+        }
       }
     }
   }
@@ -793,9 +825,14 @@ function giInfo(gi) {
   return { color: "#e78284", label: "High" };
 }
 
-function giDotHtml(gi) {
-  const info = giInfo(gi);
-  return info ? `<span><i class="dot" style="background:${info.color}"></i>GI ${Math.round(gi)}</span>` : "";
+function giDotHtml(it) {
+  const eff = effectiveGI(it);
+  if (!eff) return "";
+  const info = giInfo(eff.value);
+  const label = eff.guessed ? `~${eff.value}` : `${eff.value}`;
+  const title = eff.guessed ? "Estimated from macros — no GI was tagged" : "Tagged glycemic index";
+  const dotColor = eff.guessed ? info.color + "80" : info.color;
+  return `<span title="${title}"><i class="dot" style="background:${dotColor}"></i>GI ${label}</span>`;
 }
 
 function renderTotals() {
@@ -820,7 +857,7 @@ function renderTotals() {
       ${macroLegendItem("Carbs", "#e5c890", t.carbs, g.carbs)}
       ${macroLegendItem("Fat", "#a6d189", t.fat, g.fat)}
     </div>
-    ${t.avgGI != null ? `<div class="giSummary"><i class="dot" style="background:${giInfo(t.avgGI).color}"></i>Carb-weighted glycemic index: ${t.avgGI} (${giInfo(t.avgGI).label})</div>` : ""}
+    ${t.avgGI != null ? `<div class="giSummary"><i class="dot" style="background:${giInfo(t.avgGI).color}"></i>Avg glycemic index: ${t.avgGI} (${giInfo(t.avgGI).label})</div><p class="hint" style="text-align:center;margin-top:2px;">Carb-weighted across today's items; untagged ones (~) are estimated from their macros.</p>` : ""}
   `;
 }
 
@@ -836,7 +873,7 @@ function itemRowHtml(meal, it) {
         <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
-        ${giDotHtml(it.gi)}
+        ${giDotHtml(it)}
       </div>
       <button type="button" class="itemDel" data-meal="${meal}" data-id="${it.id}" aria-label="Delete item">×</button>
     </div>
@@ -985,7 +1022,7 @@ function historyRowHtml(it, i) {
         <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
-        ${giDotHtml(it.gi)}
+        ${giDotHtml(it)}
       </div>
       <button type="button" class="historyAdd small" data-i="${i}">Add</button>
     </div>
