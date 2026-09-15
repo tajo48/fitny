@@ -354,10 +354,30 @@
 <div id="onboardOverlay" class="modalOverlay" hidden>
   <div class="modalCard">
     <h2>Welcome to Fitny</h2>
-    <p class="hint">Enter your current weight and goal to get sensible starting calorie &amp; macro targets. You can fine-tune (or ignore) all of this later in Settings.</p>
-    <div class="field">
-      <label for="onboardWeight">Current body weight (kg)</label>
-      <input type="number" id="onboardWeight" step="0.1" inputmode="decimal" placeholder="e.g. 75">
+    <p class="hint">Enter a few details to get sensible starting calorie &amp; macro targets. You can fine-tune (or ignore) all of this later in Settings.</p>
+    <div class="row">
+      <div class="field">
+        <label for="onboardWeight">Weight (kg)</label>
+        <input type="number" id="onboardWeight" step="0.1" inputmode="decimal" placeholder="e.g. 75">
+      </div>
+      <div class="field">
+        <label for="onboardHeight">Height (cm)</label>
+        <input type="number" id="onboardHeight" step="0.1" inputmode="decimal" placeholder="e.g. 175">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="onboardAge">Age</label>
+        <input type="number" id="onboardAge" inputmode="numeric" min="0" placeholder="e.g. 30">
+      </div>
+      <div class="field">
+        <label for="onboardGender">Gender</label>
+        <select id="onboardGender">
+          <option value="male">Male</option>
+          <option value="female">Female</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
     </div>
     <div class="field">
       <label for="onboardGoal">Goal</label>
@@ -664,22 +684,55 @@ function emptyGoals() {
 }
 
 const GOAL_TYPES = ["lose", "maintain", "gain"];
-/* Rough, deliberately simple kcal-per-kg-of-bodyweight rules of thumb (not a
-   substitute for real coaching) used to seed sensible starting goals for
-   anyone who hasn't set their own yet — a reasonable default beats leaving
-   every goal blank. Protein/fat are set from common per-kg targets and carbs
-   fill in whatever calories are left. */
-const GOAL_KCAL_PER_KG = { lose: 26, maintain: 30, gain: 34 };
+/* Flat kcal-per-kg-of-bodyweight fallback for anyone who hasn't given an
+   age/height/gender (so a real BMR can't be computed) — still better than
+   leaving every goal blank. */
+const MAINTENANCE_KCAL_PER_KG = 30;
+/* No activity-level question is asked, so a single "lightly active"
+   multiplier stands in for everyone — a deliberately simple, admittedly
+   rough estimate of daily activity on top of resting metabolism. */
+const ACTIVITY_MULTIPLIER = 1.4;
+/* Applied on top of estimated maintenance calories per goal — a ~15%
+   deficit/surplus is a common, moderate starting point for weight
+   loss/gain. */
+const GOAL_KCAL_FACTOR = { lose: 0.85, maintain: 1, gain: 1.15 };
 
 function normalizeGoalType(v) {
   return GOAL_TYPES.includes(v) ? v : "maintain";
 }
 
-function computeDefaultGoals(weightKg, goalType) {
+function normalizeGender(v) {
+  return v === "male" || v === "female" || v === "other" ? v : "";
+}
+
+/* Mifflin-St Jeor resting-metabolism estimate — the standard, widely-used
+   formula that needs weight/height/age/gender. "Other" splits the
+   difference between the male/female offsets since there's no dedicated
+   term for it in the original formula. */
+function bmrMifflinStJeor(weightKg, heightCm, age, gender) {
+  const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+  if (gender === "male") return base + 5;
+  if (gender === "female") return base - 161;
+  return base - 78;
+}
+
+/* Seeds sensible starting kcal/protein/carbs/fat goals for anyone who
+   hasn't set their own yet. Given a full profile (weight + height + age +
+   gender) it estimates maintenance calories with Mifflin-St Jeor times a
+   flat activity multiplier; with only a weight it falls back to a flat
+   kcal-per-kg rule of thumb. Either way, a goal-type factor nudges the
+   result into a deficit/surplus, protein/fat come from common per-kg
+   targets, and carbs fill in whatever calories are left. */
+function computeDefaultGoals({ weightKg, goalType, age, gender, height } = {}) {
   const w = Number(weightKg);
   if (!Number.isFinite(w) || w <= 0) return null;
-  const kcalPerKg = GOAL_KCAL_PER_KG[normalizeGoalType(goalType)];
-  const kcal = Math.round(w * kcalPerKg);
+  const a = Number(age);
+  const h = Number(height);
+  const hasProfile = Number.isFinite(a) && a > 0 && Number.isFinite(h) && h > 0;
+  const maintenanceKcal = hasProfile
+    ? bmrMifflinStJeor(w, h, a, gender) * ACTIVITY_MULTIPLIER
+    : w * MAINTENANCE_KCAL_PER_KG;
+  const kcal = Math.round(maintenanceKcal * GOAL_KCAL_FACTOR[normalizeGoalType(goalType)]);
   const protein = Math.round(w * 1.8);
   const fat = Math.round(w * 0.8);
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
@@ -708,10 +761,13 @@ function loadSettings() {
       const goals = { ...emptyGoals(), ...(parsed.goals || {}) };
       const model = resolveModel(parsed.model, parsed.defaultModelSeen);
       const goalType = normalizeGoalType(parsed.goalType);
-      return { apiKey: parsed.apiKey || "", model, goalType, defaultModelSeen: DEFAULT_MODEL, goals };
+      const age = numOrNull(parsed.age);
+      const gender = normalizeGender(parsed.gender);
+      const height = numOrNull(parsed.height);
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -919,6 +975,7 @@ apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
 goalTypeSelect.value = settings.goalType;
 syncGoalInputs();
+syncAiAnalyzeButton();
 
 /* ============================================================
    Rendering — Log tab
@@ -1131,17 +1188,17 @@ function focusApiKeySetting() {
   apiKeyInput.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-function updateAiKeyNotice() {
+/* Swaps the primary CTA itself between "Analyze with AI" and "Add key in
+   Settings" depending on whether a key is set, instead of letting you click
+   Analyze only to be told afterwards that it won't work. */
+function syncAiAnalyzeButton() {
   if (settings.apiKey) {
-    if (aiStatus.dataset.keyNotice) {
-      aiStatus.innerHTML = "";
-      delete aiStatus.dataset.keyNotice;
-    }
-    return;
+    aiAnalyzeBtn.textContent = "Analyze with AI";
+    aiAnalyzeBtn.title = "";
+  } else {
+    aiAnalyzeBtn.textContent = "Add key in Settings";
+    aiAnalyzeBtn.title = "Add your OpenRouter API key in Settings to use AI analysis.";
   }
-  aiStatus.innerHTML = 'No OpenRouter API key set yet. <button type="button" id="aiGoToKey" class="secondary small">Add key in Settings</button>';
-  aiStatus.dataset.keyNotice = "1";
-  document.getElementById("aiGoToKey").addEventListener("click", focusApiKeySetting);
 }
 
 document.querySelectorAll(".modeBtn").forEach((btn) => {
@@ -1152,7 +1209,7 @@ document.querySelectorAll(".modeBtn").forEach((btn) => {
     aiForm.hidden = mode !== "ai";
     historyForm.hidden = mode !== "history";
     if (mode === "history") renderHistoryResults();
-    if (mode === "ai") updateAiKeyNotice();
+    if (mode === "ai") syncAiAnalyzeButton();
   });
 });
 
@@ -1439,12 +1496,11 @@ async function analyzeWithAI(text, imageDataUrl, signal) {
 let aiAbortController = null;
 
 aiAnalyzeBtn.addEventListener("click", async () => {
-  aiStatus.textContent = "";
-  delete aiStatus.dataset.keyNotice;
   if (!settings.apiKey) {
-    updateAiKeyNotice();
+    focusApiKeySetting();
     return;
   }
+  aiStatus.textContent = "";
   if (!aiText.value.trim() && !aiImageDataUrl) {
     aiStatus.textContent = "Add a description or a photo first.";
     return;
@@ -1851,7 +1907,7 @@ tabButtons.forEach((btn) => {
 apiKeyInput.addEventListener("input", () => {
   settings.apiKey = apiKeyInput.value.trim();
   saveSettings();
-  if (!aiForm.hidden) updateAiKeyNotice();
+  syncAiAnalyzeButton();
 });
 modelInput.addEventListener("input", () => {
   settings.model = modelInput.value.trim() || DEFAULT_MODEL;
@@ -1916,7 +1972,13 @@ goalTypeSelect.addEventListener("change", () => {
 autofillGoalsBtn.addEventListener("click", () => {
   const entries = weightEntries();
   const w = entries.length ? entries[entries.length - 1].weight : (settings.goals.weight ?? numOrNull(weightInput.value));
-  const defaults = computeDefaultGoals(w, goalTypeSelect.value);
+  const defaults = computeDefaultGoals({
+    weightKg: w,
+    goalType: goalTypeSelect.value,
+    age: settings.age,
+    gender: settings.gender,
+    height: settings.height,
+  });
   if (!defaults) {
     alert("Log a body weight first (on the Log tab) or set a goal weight above.");
     return;
@@ -1971,12 +2033,16 @@ importFile.addEventListener("change", () => {
         settings.model = resolveModel(parsed.settings.model, parsed.settings.defaultModelSeen);
         settings.defaultModelSeen = DEFAULT_MODEL;
         settings.goalType = normalizeGoalType(parsed.settings.goalType);
+        settings.age = numOrNull(parsed.settings.age);
+        settings.gender = normalizeGender(parsed.settings.gender);
+        settings.height = numOrNull(parsed.settings.height);
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
         goalTypeSelect.value = settings.goalType;
         syncGoalInputs();
+        syncAiAnalyzeButton();
       }
       currentDate = todayIso();
       render();
@@ -2004,18 +2070,34 @@ clearBtn.addEventListener("click", () => {
 const ONBOARD_KEY = "fitny_onboarded_v1";
 const onboardOverlay = document.getElementById("onboardOverlay");
 const onboardWeight = document.getElementById("onboardWeight");
+const onboardHeight = document.getElementById("onboardHeight");
+const onboardAge = document.getElementById("onboardAge");
+const onboardGender = document.getElementById("onboardGender");
 const onboardGoal = document.getElementById("onboardGoal");
 const onboardPreview = document.getElementById("onboardPreview");
 const onboardSkip = document.getElementById("onboardSkip");
 const onboardStart = document.getElementById("onboardStart");
 
+function onboardProfile() {
+  return {
+    weightKg: numOrNull(onboardWeight.value),
+    height: numOrNull(onboardHeight.value),
+    age: numOrNull(onboardAge.value),
+    gender: onboardGender.value,
+    goalType: onboardGoal.value,
+  };
+}
+
 function updateOnboardPreview() {
-  const defaults = computeDefaultGoals(numOrNull(onboardWeight.value), onboardGoal.value);
+  const defaults = computeDefaultGoals(onboardProfile());
   onboardPreview.textContent = defaults
     ? `Suggested: ${defaults.kcal} kcal · ${defaults.protein}g protein · ${defaults.carbs}g carbs · ${defaults.fat}g fat`
     : "Enter your weight to see suggested targets.";
 }
 onboardWeight.addEventListener("input", updateOnboardPreview);
+onboardHeight.addEventListener("input", updateOnboardPreview);
+onboardAge.addEventListener("input", updateOnboardPreview);
+onboardGender.addEventListener("change", updateOnboardPreview);
 onboardGoal.addEventListener("change", updateOnboardPreview);
 
 function closeOnboarding() {
@@ -2025,12 +2107,15 @@ function closeOnboarding() {
 
 onboardSkip.addEventListener("click", closeOnboarding);
 onboardStart.addEventListener("click", () => {
-  const w = numOrNull(onboardWeight.value);
-  if (w && w > 0) {
-    ensureDay(todayIso()).weight = w;
+  const profile = onboardProfile();
+  if (profile.weightKg && profile.weightKg > 0) {
+    ensureDay(todayIso()).weight = profile.weightKg;
     saveDB();
-    settings.goalType = normalizeGoalType(onboardGoal.value);
-    const defaults = computeDefaultGoals(w, settings.goalType);
+    settings.goalType = normalizeGoalType(profile.goalType);
+    settings.age = profile.age;
+    settings.gender = normalizeGender(profile.gender);
+    settings.height = profile.height;
+    const defaults = computeDefaultGoals(profile);
     if (defaults) {
       settings.goals.kcal = defaults.kcal;
       settings.goals.protein = defaults.protein;
