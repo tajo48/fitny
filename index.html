@@ -165,8 +165,6 @@
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
   .totalsKcalGoal { font-size: 15px; color: #a5adce; }
-  .macroBar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 10px; }
-  .macroBar span { display: block; height: 100%; }
   .macroLegend { display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: #c6d0f5; }
   .macroLegend .dot, .itemMacros .dot, .historyRow .dot, .giGaugeLabel .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .macroRow { display: flex; align-items: center; gap: 10px; }
@@ -174,16 +172,22 @@
   .macroRow .progressBar { flex: 1 1 auto; margin-bottom: 0; }
 
   /* Goal-progress bar: fills toward the goal, then turns red and rescales
-     past 100% instead of clipping flush with the edge. */
-  .progressBar { position: relative; width: 100%; height: 8px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 2px; }
+     past 100% instead of clipping flush with the edge. The colored fill is
+     clipped to a rounded track, but the goal marker lives one level up so
+     its overhang isn't clipped along with it — that's what makes it stand
+     out instead of just being a sliver lost inside the bar. */
+  .progressBar { position: relative; width: 100%; margin-bottom: 2px; }
+  .progressTrack { position: relative; height: 8px; border-radius: 999px; overflow: hidden; background: #414559; }
   .progressFill { display: block; height: 100%; border-radius: 999px; }
   .progressOverfill { position: absolute; top: 0; height: 100%; background: #e78284; }
   .progressGoalMark { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; box-shadow: 0 0 0 1px #232634; }
 
   /* Glycemic-index gauge: fixed low/medium/high bands with a marker for
-     today's carb-weighted average. */
+     today's carb-weighted average — same track/marker split as the goal
+     bars above, so the marker is exactly as visible. */
   .giGaugeWrap { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-  .giGauge { position: relative; display: flex; flex: 1 1 auto; height: 8px; border-radius: 999px; overflow: hidden; }
+  .giGauge { position: relative; flex: 1 1 auto; }
+  .giTrack { display: flex; height: 8px; border-radius: 999px; overflow: hidden; }
   .giZone { display: block; height: 100%; }
   .giMarker { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; transform: translateX(-50%); box-shadow: 0 0 0 1px #232634; }
   .giGaugeLabel { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; font-size: 12px; color: #c6d0f5; }
@@ -830,15 +834,17 @@ function progressBarHtml(value, goal, color) {
   const overPct = over ? fillPct - goalPct : 0;
   return `
     <div class="progressBar">
-      <span class="progressFill" style="width:${basePct}%;background:${color}"></span>
-      ${over ? `<span class="progressOverfill" style="left:${goalPct}%;width:${overPct}%"></span>` : ""}
+      <div class="progressTrack">
+        <span class="progressFill" style="width:${basePct}%;background:${color}"></span>
+        ${over ? `<span class="progressOverfill" style="left:${goalPct}%;width:${overPct}%"></span>` : ""}
+      </div>
       <span class="progressGoalMark" style="left:${goalPct}%"></span>
     </div>
   `;
 }
 
-function macroRowHtml(label, color, value, goal) {
-  const suffix = goal ? ` / ${goal} g` : " g";
+function macroRowHtml(label, color, value, goal, unit = "g") {
+  const suffix = goal ? ` / ${goal} ${unit}` : ` ${unit}`;
   return `
     <div class="macroRow">
       <span class="macroRowLabel"><i class="dot" style="background:${color}"></i>${label} ${value.toFixed(0)}${suffix}</span>
@@ -881,9 +887,11 @@ function giGaugeHtml(gi) {
     <div class="giGaugeWrap">
       <div class="giGaugeLabel">${labelHtml}</div>
       <div class="giGauge">
-        <span class="giZone" style="flex:0 0 55%;background:#a6d189"></span>
-        <span class="giZone" style="flex:0 0 15%;background:#e5c890"></span>
-        <span class="giZone" style="flex:0 0 30%;background:#e78284"></span>
+        <div class="giTrack">
+          <span class="giZone" style="flex:0 0 55%;background:#a6d189"></span>
+          <span class="giZone" style="flex:0 0 15%;background:#e5c890"></span>
+          <span class="giZone" style="flex:0 0 30%;background:#e78284"></span>
+        </div>
         ${hasValue ? `<span class="giMarker" style="left:${Math.max(0, Math.min(100, gi))}%"></span>` : ""}
       </div>
     </div>
@@ -893,21 +901,14 @@ function giGaugeHtml(gi) {
 function renderTotals() {
   const t = totalsFor(currentDate);
   const g = settings.goals || emptyGoals();
-  const pCal = t.protein * 4, cCal = t.carbs * 4, fCal = t.fat * 9;
-  const calSum = pCal + cCal + fCal || 1;
   const kcalRight = g.kcal ? `<span class="totalsKcalGoal">/ ${g.kcal} kcal</span>` : `<span class="totalsKcalLabel">kcal</span>`;
   totalsEl.innerHTML = `
     <div class="totalsTop">
       <span class="totalsKcal">${Math.round(t.kcal)}</span>
       ${kcalRight}
     </div>
-    ${progressBarHtml(t.kcal, g.kcal, "#8caaee")}
-    <div class="macroBar">
-      <span style="width:${(pCal / calSum) * 100}%;background:#e78284"></span>
-      <span style="width:${(cCal / calSum) * 100}%;background:#e5c890"></span>
-      <span style="width:${(fCal / calSum) * 100}%;background:#a6d189"></span>
-    </div>
     <div class="macroLegend">
+      ${macroRowHtml("Kcal", "#8caaee", t.kcal, g.kcal, "kcal")}
       ${macroRowHtml("Protein", "#e78284", t.protein, g.protein)}
       ${macroRowHtml("Carbs", "#e5c890", t.carbs, g.carbs)}
       ${macroRowHtml("Fat", "#a6d189", t.fat, g.fat)}
