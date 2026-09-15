@@ -178,14 +178,14 @@
   .progressBar { position: relative; width: 100%; height: 8px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 2px; }
   .progressFill { display: block; height: 100%; border-radius: 999px; }
   .progressOverfill { position: absolute; top: 0; height: 100%; background: #e78284; }
-  .progressGoalMark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #c6d0f5; }
+  .progressGoalMark { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; box-shadow: 0 0 0 1px #232634; }
 
   /* Glycemic-index gauge: fixed low/medium/high bands with a marker for
      today's carb-weighted average. */
   .giGaugeWrap { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
   .giGauge { position: relative; display: flex; flex: 1 1 auto; height: 8px; border-radius: 999px; overflow: hidden; }
   .giZone { display: block; height: 100%; }
-  .giMarker { position: absolute; top: -2px; bottom: -2px; width: 2px; border-radius: 2px; background: #c6d0f5; transform: translateX(-50%); box-shadow: 0 0 0 1px #232634; }
+  .giMarker { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; transform: translateX(-50%); box-shadow: 0 0 0 1px #232634; }
   .giGaugeLabel { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; font-size: 12px; color: #c6d0f5; }
 
   .mealsWrap { display: flex; flex-direction: column; gap: 10px; width: 100%; }
@@ -242,17 +242,6 @@
   .aiPreviewWrap { position: relative; display: inline-block; }
   #aiPreview { max-width: 160px; max-height: 160px; border-radius: 6px; border: 2px solid #51576d; display: block; }
   #aiPreview[hidden] { display: none; }
-
-  .aiRow {
-    display: grid;
-    grid-template-columns: auto 1.4fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr;
-    gap: 6px;
-    align-items: center;
-    padding: 6px 0;
-    border-top: 1px solid #414559;
-  }
-  .aiRow:first-of-type { border-top: none; }
-  .aiRow input[type="text"], .aiRow input[type="number"] { font-size: 12px; padding: 6px 6px; }
 
   /* ---------- history tab ---------- */
   .rangeSwitch { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 0; }
@@ -883,17 +872,19 @@ function giDotHtml(it) {
    goal bars above, GI's "good" and "bad" zones are fixed by definition, not
    relative to a personal target, so the track itself never rescales. */
 function giGaugeHtml(gi) {
-  if (gi == null) return "";
-  const info = giInfo(gi);
-  const pct = Math.max(0, Math.min(100, gi));
+  const hasValue = gi != null;
+  const info = hasValue ? giInfo(gi) : null;
+  const labelHtml = hasValue
+    ? `<i class="dot" style="background:${info.color}"></i>GI ${gi} / 100`
+    : `GI 0 / 100`;
   return `
     <div class="giGaugeWrap">
-      <div class="giGaugeLabel"><i class="dot" style="background:${info.color}"></i>GI ${gi} / 100</div>
+      <div class="giGaugeLabel">${labelHtml}</div>
       <div class="giGauge">
         <span class="giZone" style="flex:0 0 55%;background:#a6d189"></span>
         <span class="giZone" style="flex:0 0 15%;background:#e5c890"></span>
         <span class="giZone" style="flex:0 0 30%;background:#e78284"></span>
-        <span class="giMarker" style="left:${pct}%"></span>
+        ${hasValue ? `<span class="giMarker" style="left:${Math.max(0, Math.min(100, gi))}%"></span>` : ""}
       </div>
     </div>
   `;
@@ -965,15 +956,8 @@ function renderMeals() {
 }
 
 function renderWeightGoalHint() {
-  const day = getDay(currentDate);
   const goal = settings.goals.weight;
-  if (!goal || !day || typeof day.weight !== "number") {
-    weightGoalHint.textContent = goal ? ` · Goal: ${goal} kg` : "";
-    return;
-  }
-  const delta = day.weight - goal;
-  const sign = delta > 0 ? "+" : "";
-  weightGoalHint.textContent = ` · Goal: ${goal} kg (${sign}${delta.toFixed(1)} kg)`;
+  weightGoalHint.textContent = goal ? ` · Goal: ${goal} kg` : "";
 }
 
 function render() {
@@ -1016,6 +1000,8 @@ mealsWrap.addEventListener("click", (e) => {
   const { meal, id } = btn.dataset;
   const day = getDay(currentDate);
   if (!day) return;
+  const item = (day.meals[meal] || []).find((it) => it.id === id);
+  if (!confirm(`Delete "${item ? item.name : "this item"}"?`)) return;
   day.meals[meal] = (day.meals[meal] || []).filter((it) => it.id !== id);
   saveDB();
   render();
@@ -1272,7 +1258,6 @@ function parseItemsFromText(raw) {
     carbs: numOrNull(it.carbs_g ?? it.carbs) ?? 0,
     fat: numOrNull(it.fat_g ?? it.fat) ?? 0,
     gi: numOrNull(it.gi),
-    checked: true,
   }));
 }
 
@@ -1354,17 +1339,24 @@ aiCancelBtn.addEventListener("click", () => {
   if (aiAbortController) aiAbortController.abort();
 });
 
+/* Predictions are shown exactly like already-logged items — no checkboxes,
+   just a reject (×) to discard a wrong guess and an Add to approve it. */
 function aiRowHtml(it, i) {
   return `
-    <div class="aiRow">
-      <input type="checkbox" class="aiCheck" data-i="${i}" ${it.checked ? "checked" : ""}>
-      <input type="text" class="aiName" data-i="${i}" value="${esc(it.name)}" placeholder="name">
-      <input type="number" class="aiGrams" data-i="${i}" value="${it.grams ?? ""}" placeholder="g">
-      <input type="number" class="aiKcal" data-i="${i}" value="${it.kcal ?? ""}" placeholder="kcal">
-      <input type="number" class="aiProtein" data-i="${i}" value="${it.protein ?? ""}" placeholder="P g">
-      <input type="number" class="aiCarbs" data-i="${i}" value="${it.carbs ?? ""}" placeholder="C g">
-      <input type="number" class="aiFat" data-i="${i}" value="${it.fat ?? ""}" placeholder="F g">
-      <input type="number" class="aiGI" data-i="${i}" value="${it.gi ?? ""}" placeholder="GI" min="0" max="100">
+    <div class="itemRow">
+      <div class="itemMain">
+        <span class="itemName">${esc(it.name)}</span>
+        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+      </div>
+      <div class="itemMacros">
+        <span>${Math.round(num(it.kcal))} kcal</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        ${giDotHtml(it)}
+      </div>
+      <button type="button" class="itemDel aiReject" data-i="${i}" aria-label="Remove prediction">×</button>
+      <button type="button" class="small aiApprove" data-i="${i}">Add</button>
     </div>
   `;
 }
@@ -1376,37 +1368,27 @@ function renderAiResults() {
     return;
   }
   aiResultsEl.hidden = false;
-  aiResultsEl.innerHTML = aiPending.map(aiRowHtml).join("") + `<button id="aiAddChecked" type="button">Add checked to meal</button>`;
+  aiResultsEl.innerHTML = aiPending.map(aiRowHtml).join("");
 }
 
-aiResultsEl.addEventListener("input", (e) => {
-  const i = e.target.dataset.i;
-  if (i === undefined) return;
-  const it = aiPending[i];
-  if (!it) return;
-  if (e.target.classList.contains("aiName")) it.name = e.target.value;
-  else if (e.target.classList.contains("aiGrams")) it.grams = numOrNull(e.target.value);
-  else if (e.target.classList.contains("aiKcal")) it.kcal = numOrNull(e.target.value) ?? 0;
-  else if (e.target.classList.contains("aiProtein")) it.protein = numOrNull(e.target.value) ?? 0;
-  else if (e.target.classList.contains("aiCarbs")) it.carbs = numOrNull(e.target.value) ?? 0;
-  else if (e.target.classList.contains("aiFat")) it.fat = numOrNull(e.target.value) ?? 0;
-  else if (e.target.classList.contains("aiGI")) it.gi = numOrNull(e.target.value);
-});
-
-aiResultsEl.addEventListener("change", (e) => {
-  if (e.target.classList.contains("aiCheck")) {
-    const it = aiPending[e.target.dataset.i];
-    if (it) it.checked = e.target.checked;
-  }
-});
-
 aiResultsEl.addEventListener("click", (e) => {
-  if (e.target.id !== "aiAddChecked") return;
-  const meal = aiMealSelect.value;
-  const day = ensureDay(currentDate);
-  let count = 0;
-  for (const it of aiPending) {
-    if (!it.checked) continue;
+  const rejectBtn = e.target.closest(".aiReject");
+  if (rejectBtn) {
+    aiPending.splice(Number(rejectBtn.dataset.i), 1);
+    renderAiResults();
+    if (!aiPending.length) {
+      aiText.value = "";
+      clearAiImage();
+    }
+    return;
+  }
+  const approveBtn = e.target.closest(".aiApprove");
+  if (approveBtn) {
+    const i = Number(approveBtn.dataset.i);
+    const it = aiPending[i];
+    if (!it) return;
+    const meal = aiMealSelect.value;
+    const day = ensureDay(currentDate);
     day.meals[meal].push({
       id: uid(),
       name: it.name || "Item",
@@ -1417,15 +1399,16 @@ aiResultsEl.addEventListener("click", (e) => {
       fat: num(it.fat),
       gi: it.gi ?? null,
     });
-    count++;
+    saveDB();
+    aiPending.splice(i, 1);
+    renderAiResults();
+    aiStatus.textContent = `Added "${it.name}" to ${MEAL_LABELS[meal]}.`;
+    if (!aiPending.length) {
+      aiText.value = "";
+      clearAiImage();
+    }
+    render();
   }
-  saveDB();
-  aiPending = [];
-  renderAiResults();
-  aiText.value = "";
-  clearAiImage();
-  aiStatus.textContent = count ? `Added ${count} item(s) to ${MEAL_LABELS[meal]}.` : "Nothing checked.";
-  render();
 });
 
 /* ============================================================
@@ -1681,6 +1664,7 @@ weightListEl.addEventListener("click", (e) => {
   const btn = e.target.closest(".wDel");
   if (!btn) return;
   const date = btn.dataset.date;
+  if (!confirm(`Delete the weight entry for ${date}?`)) return;
   if (db.days[date]) db.days[date].weight = null;
   saveDB();
   if (date === currentDate) {
