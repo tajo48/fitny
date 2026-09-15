@@ -165,11 +165,16 @@
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
   .totalsKcalGoal { font-size: 15px; color: #a5adce; }
-  .macroLegend { display: flex; flex-direction: column; gap: 10px; font-size: 12px; color: #c6d0f5; }
+  /* One shared grid for every stat row (kcal, protein, carbs, fat, GI) so
+     their label columns — and therefore every bar — line up at the same x
+     position, no matter how long each row's label text is. Each row is a
+     `display: contents` wrapper so its label + bar become direct grid items
+     instead of nesting their own box. */
+  .macroLegend { display: grid; grid-template-columns: max-content 1fr; align-items: center; column-gap: 10px; row-gap: 10px; font-size: 12px; color: #c6d0f5; }
   .macroLegend .dot, .itemMacros .dot, .historyRow .dot, .giGaugeLabel .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
-  .macroRow { display: flex; align-items: center; gap: 10px; }
-  .macroRowLabel { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; }
-  .macroRow .progressBar { flex: 1 1 auto; margin-bottom: 0; }
+  .macroRow { display: contents; }
+  .macroRowLabel { display: flex; align-items: center; white-space: nowrap; }
+  .macroRow .progressBar { margin-bottom: 0; }
 
   /* Goal-progress bar: fills toward the goal, then turns red and rescales
      past 100% instead of clipping flush with the edge. The colored fill is
@@ -184,13 +189,14 @@
 
   /* Glycemic-index gauge: fixed low/medium/high bands with a marker for
      today's carb-weighted average — same track/marker split as the goal
-     bars above, so the marker is exactly as visible. */
-  .giGaugeWrap { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
-  .giGauge { position: relative; flex: 1 1 auto; }
+     bars above, so the marker is exactly as visible, and the same grid row
+     shape as the bars above so it lines up with them too. */
+  .giGaugeWrap { display: contents; }
+  .giGauge { position: relative; width: 100%; }
   .giTrack { display: flex; height: 8px; border-radius: 999px; overflow: hidden; }
   .giZone { display: block; height: 100%; }
   .giMarker { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; transform: translateX(-50%); box-shadow: 0 0 0 1px #232634; }
-  .giGaugeLabel { display: flex; align-items: center; flex: 0 0 auto; white-space: nowrap; font-size: 12px; color: #c6d0f5; }
+  .giGaugeLabel { display: flex; align-items: center; white-space: nowrap; }
 
   .mealsWrap { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .mealCard { padding: 12px 14px; }
@@ -471,9 +477,9 @@
     <div class="card">
       <h3 style="margin-bottom:8px;">Protein / Carbs / Fat</h3>
       <div class="chartLegend">
-        <span><i class="dot" style="background:#e78284"></i>Protein</span>
-        <span><i class="dot" style="background:#e5c890"></i>Carbs</span>
-        <span><i class="dot" style="background:#a6d189"></i>Fat</span>
+        <span><i class="dot" style="background:#a6d189"></i>Protein</span>
+        <span><i class="dot" style="background:#e78284"></i>Carbs</span>
+        <span><i class="dot" style="background:#e5c890"></i>Fat</span>
       </div>
       <canvas id="macroChart" width="1200" height="420"></canvas>
     </div>
@@ -907,11 +913,11 @@ function renderTotals() {
     </div>
     <div class="macroLegend">
       ${macroRowHtml("Kcal", "#8caaee", t.kcal, g.kcal, "kcal")}
-      ${macroRowHtml("Protein", "#e78284", t.protein, g.protein)}
-      ${macroRowHtml("Carbs", "#e5c890", t.carbs, g.carbs)}
-      ${macroRowHtml("Fat", "#a6d189", t.fat, g.fat)}
+      ${macroRowHtml("Protein", "#a6d189", t.protein, g.protein)}
+      ${macroRowHtml("Carbs", "#e78284", t.carbs, g.carbs)}
+      ${macroRowHtml("Fat", "#e5c890", t.fat, g.fat)}
+      ${giGaugeHtml(t.avgGI)}
     </div>
-    ${giGaugeHtml(t.avgGI)}
   `;
 }
 
@@ -924,9 +930,9 @@ function itemRowHtml(meal, it) {
       </div>
       <div class="itemMacros">
         <span>${Math.round(num(it.kcal))} kcal</span>
-        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
-        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
-        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
         ${giDotHtml(it)}
       </div>
       <button type="button" class="itemDel" data-meal="${meal}" data-id="${it.id}" aria-label="Delete item">×</button>
@@ -1068,9 +1074,9 @@ function historyRowHtml(it, i) {
       </div>
       <div class="itemMacros">
         <span>${Math.round(num(it.kcal))} kcal</span>
-        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
-        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
-        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
         ${giDotHtml(it)}
       </div>
       <button type="button" class="historyAdd small" data-i="${i}">Add</button>
@@ -1349,9 +1355,9 @@ function aiRowHtml(it, i) {
       </div>
       <div class="itemMacros">
         <span>${Math.round(num(it.kcal))} kcal</span>
-        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
-        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
-        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
         ${giDotHtml(it)}
       </div>
       <button type="button" class="itemDel aiReject" data-i="${i}" aria-label="Remove prediction">×</button>
@@ -1600,9 +1606,9 @@ function drawMacroChart() {
   const entries = filterByRange(calorieEntries());
   drawTimeSeriesChart(macroCanvas, mctx, {
     series: [
-      { color: "#e78284", points: entries.map((e) => ({ date: e.date, y: e.protein })) },
-      { color: "#e5c890", points: entries.map((e) => ({ date: e.date, y: e.carbs })) },
-      { color: "#a6d189", points: entries.map((e) => ({ date: e.date, y: e.fat })) },
+      { color: "#a6d189", points: entries.map((e) => ({ date: e.date, y: e.protein })) },
+      { color: "#e78284", points: entries.map((e) => ({ date: e.date, y: e.carbs })) },
+      { color: "#e5c890", points: entries.map((e) => ({ date: e.date, y: e.fat })) },
     ],
     minAtZero: true,
     valueFmt: (v) => String(Math.round(v)),
