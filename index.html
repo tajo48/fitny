@@ -169,7 +169,8 @@
   .macroBar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 10px; }
   .macroBar span { display: block; height: 100%; }
   .macroLegend { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #c6d0f5; }
-  .macroLegend .dot, .itemMacros .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .macroLegend .dot, .itemMacros .dot, .historyRow .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .giSummary { text-align: center; font-size: 12px; color: #c6d0f5; margin-top: 8px; }
 
   .mealsWrap { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .mealCard { padding: 12px 14px; }
@@ -228,7 +229,7 @@
 
   .aiRow {
     display: grid;
-    grid-template-columns: auto 1.4fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr;
+    grid-template-columns: auto 1.4fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr;
     gap: 6px;
     align-items: center;
     padding: 6px 0;
@@ -349,12 +350,12 @@
     <div class="card addcard">
       <h3>Add food</h3>
       <div class="addModeSwitch">
-        <button class="modeBtn active" data-mode="manual" type="button">Add by hand</button>
-        <button class="modeBtn" data-mode="ai" type="button">Add with AI</button>
+        <button class="modeBtn" data-mode="manual" type="button">Add by hand</button>
+        <button class="modeBtn active" data-mode="ai" type="button">Add with AI</button>
         <button class="modeBtn" data-mode="history" type="button">From history</button>
       </div>
 
-      <div id="manualForm" class="addForm">
+      <div id="manualForm" class="addForm" hidden>
         <div class="field">
           <label for="manualMeal">Meal</label>
           <select id="manualMeal">
@@ -377,11 +378,15 @@
           <div class="field"><label for="manualCarbs">Carbs (g)</label><input type="number" id="manualCarbs" inputmode="decimal" min="0"></div>
           <div class="field"><label for="manualFat">Fat (g)</label><input type="number" id="manualFat" inputmode="decimal" min="0"></div>
         </div>
-        <p class="hint">Leave kcal blank to auto-calculate it from protein/carbs/fat (4 / 4 / 9 kcal per gram).</p>
+        <div class="field">
+          <label for="manualGI">Glycemic index (optional, 0–100)</label>
+          <input type="number" id="manualGI" inputmode="decimal" min="0" max="100" placeholder="e.g. 55">
+        </div>
+        <p class="hint">Leave kcal blank to auto-calculate it from protein/carbs/fat (4 / 4 / 9 kcal per gram). Leave GI blank for foods with negligible carbs.</p>
         <button id="manualAdd" type="button">Add item</button>
       </div>
 
-      <div id="aiForm" class="addForm" hidden>
+      <div id="aiForm" class="addForm">
         <div class="field">
           <label for="aiMeal">Meal</label>
           <select id="aiMeal">
@@ -636,16 +641,25 @@ function esc(s) {
 
 function totalsFor(dateStr) {
   const day = getDay(dateStr);
-  const t = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+  const t = { kcal: 0, protein: 0, carbs: 0, fat: 0, avgGI: null };
   if (!day) return t;
+  let giWeighted = 0;
+  let giCarbBase = 0;
   for (const m of MEALS) {
     for (const it of day.meals[m] || []) {
       t.kcal += num(it.kcal);
       t.protein += num(it.protein);
       t.carbs += num(it.carbs);
       t.fat += num(it.fat);
+      // A meal's glycemic impact is dominated by its carb-heavy items, so the
+      // day's GI is the carb-weighted average, not a flat mean across items.
+      if (it.gi != null && num(it.carbs) > 0) {
+        giWeighted += it.gi * num(it.carbs);
+        giCarbBase += num(it.carbs);
+      }
     }
   }
+  if (giCarbBase > 0) t.avgGI = Math.round(giWeighted / giCarbBase);
   return t;
 }
 
@@ -705,6 +719,7 @@ const manualKcal = document.getElementById("manualKcal");
 const manualProtein = document.getElementById("manualProtein");
 const manualCarbs = document.getElementById("manualCarbs");
 const manualFat = document.getElementById("manualFat");
+const manualGI = document.getElementById("manualGI");
 const manualAddBtn = document.getElementById("manualAdd");
 
 const aiMealSelect = document.getElementById("aiMeal");
@@ -768,6 +783,21 @@ function macroLegendItem(label, color, value, goal) {
   return `<span><i class="dot" style="background:${color}"></i>${label} ${value.toFixed(0)}${suffix}</span>`;
 }
 
+/* Standard glycemic-index bands (glucose = 100 scale), reusing the same
+   protein/carbs/fat traffic-light palette so a glance at the color says as
+   much as the number. */
+function giInfo(gi) {
+  if (gi == null || !Number.isFinite(gi)) return null;
+  if (gi < 55) return { color: "#a6d189", label: "Low" };
+  if (gi < 70) return { color: "#e5c890", label: "Medium" };
+  return { color: "#e78284", label: "High" };
+}
+
+function giDotHtml(gi) {
+  const info = giInfo(gi);
+  return info ? `<span><i class="dot" style="background:${info.color}"></i>GI ${Math.round(gi)}</span>` : "";
+}
+
 function renderTotals() {
   const t = totalsFor(currentDate);
   const g = settings.goals || emptyGoals();
@@ -790,6 +820,7 @@ function renderTotals() {
       ${macroLegendItem("Carbs", "#e5c890", t.carbs, g.carbs)}
       ${macroLegendItem("Fat", "#a6d189", t.fat, g.fat)}
     </div>
+    ${t.avgGI != null ? `<div class="giSummary"><i class="dot" style="background:${giInfo(t.avgGI).color}"></i>Carb-weighted glycemic index: ${t.avgGI} (${giInfo(t.avgGI).label})</div>` : ""}
   `;
 }
 
@@ -805,6 +836,7 @@ function itemRowHtml(meal, it) {
         <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        ${giDotHtml(it.gi)}
       </div>
       <button type="button" class="itemDel" data-meal="${meal}" data-id="${it.id}" aria-label="Delete item">×</button>
     </div>
@@ -859,11 +891,11 @@ function render() {
 
 /* ---------- date navigation ---------- */
 
-prevDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, -1); render(); });
-nextDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, 1); render(); });
-todayBtn.addEventListener("click", () => { currentDate = todayIso(); render(); });
+prevDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, -1); applyDefaultMealSelects(); render(); });
+nextDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, 1); applyDefaultMealSelects(); render(); });
+todayBtn.addEventListener("click", () => { currentDate = todayIso(); applyDefaultMealSelects(); render(); });
 dateInput.addEventListener("change", () => {
-  if (dateInput.value) { currentDate = dateInput.value; render(); }
+  if (dateInput.value) { currentDate = dateInput.value; applyDefaultMealSelects(); render(); }
 });
 
 /* ---------- weight input ---------- */
@@ -913,6 +945,18 @@ const historyStatus = document.getElementById("historyStatus");
 historyMealSelect.value = defaultMeal();
 let historyItemsCache = [];
 
+/* Re-suggests breakfast/lunch/dinner/snack from the current time of day.
+   Only makes sense while looking at today — browsing past or future days
+   leaves whatever meal you last picked alone, since "right now" has no
+   bearing on a log entry for a different date. */
+function applyDefaultMealSelects() {
+  if (currentDate !== todayIso()) return;
+  const meal = defaultMeal();
+  manualMeal.value = meal;
+  aiMealSelect.value = meal;
+  historyMealSelect.value = meal;
+}
+
 function pastItems() {
   const map = new Map();
   for (const date of Object.keys(db.days).sort()) {
@@ -922,7 +966,7 @@ function pastItems() {
         const key = String(it.name || "").trim().toLowerCase();
         if (!key) continue;
         const count = (map.get(key)?.count || 0) + 1;
-        map.set(key, { name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, lastDate: date, count });
+        map.set(key, { name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, gi: it.gi, lastDate: date, count });
       }
     }
   }
@@ -941,6 +985,7 @@ function historyRowHtml(it, i) {
         <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+        ${giDotHtml(it.gi)}
       </div>
       <button type="button" class="historyAdd small" data-i="${i}">Add</button>
     </div>
@@ -976,6 +1021,7 @@ historyResultsEl.addEventListener("click", (e) => {
     protein: num(it.protein),
     carbs: num(it.carbs),
     fat: num(it.fat),
+    gi: it.gi ?? null,
   });
   saveDB();
   historyStatus.textContent = `Added "${it.name}" to ${MEAL_LABELS[meal]}.`;
@@ -992,9 +1038,10 @@ manualAddBtn.addEventListener("click", () => {
   const carbs = numOrNull(manualCarbs.value) ?? 0;
   const fat = numOrNull(manualFat.value) ?? 0;
   const kcal = manualKcal.value !== "" ? (numOrNull(manualKcal.value) ?? 0) : Math.round(protein * 4 + carbs * 4 + fat * 9);
+  const gi = numOrNull(manualGI.value);
   const meal = manualMeal.value;
   const day = ensureDay(currentDate);
-  day.meals[meal].push({ id: uid(), name, grams, kcal, protein, carbs, fat });
+  day.meals[meal].push({ id: uid(), name, grams, kcal, protein, carbs, fat, gi });
   saveDB();
   manualName.value = "";
   manualGrams.value = "";
@@ -1002,6 +1049,7 @@ manualAddBtn.addEventListener("click", () => {
   manualProtein.value = "";
   manualCarbs.value = "";
   manualFat.value = "";
+  manualGI.value = "";
   manualName.focus();
   render();
 });
@@ -1016,11 +1064,15 @@ For branded or packaged products, use the openrouter:web_search tool to find the
 facts (matching the visible size/flavor/variant) instead of guessing. For homemade or generic food, estimate
 calories and macros using standard nutrition references, scaled to a sensible serving size.
 Reply with ONLY one JSON object and nothing else — no markdown fences, no commentary — matching exactly this shape:
-{"items":[{"name":string,"grams":number,"kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number}]}
-All numeric values describe the entire detected portion (not per 100 g). Always fill in every field with your
-best numeric estimate; never omit a field or use null. If you use the web search tool, that is only an
-intermediate step — your final reply message must still be nothing but that one JSON object, never a summary,
-citations, or plain-text answer.`;
+{"items":[{"name":string,"grams":number,"kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number,"gi":number|null}]}
+"gi" is the food's glycemic index on the standard glucose = 100 scale. Estimate it for anything containing
+digestible carbohydrate (using known reference values for common foods, or your best reasoned estimate for
+composite dishes); use null only for foods with negligible carbs where GI is not meaningful (meat, fish, eggs,
+plain oils/fats, black coffee, etc.).
+All other numeric values describe the entire detected portion (not per 100 g). Always fill in every field with
+your best numeric estimate; never omit a field. If you use the web search tool, that is only an intermediate
+step — your final reply message must still be nothing but that one JSON object, never a summary, citations, or
+plain-text answer.`;
 
 aiTakePhotoBtn.addEventListener("click", () => aiCameraInput.click());
 aiChooseFileBtn.addEventListener("click", () => aiFileInput.click());
@@ -1118,6 +1170,7 @@ function parseItemsFromText(raw) {
     protein: numOrNull(it.protein_g ?? it.protein) ?? 0,
     carbs: numOrNull(it.carbs_g ?? it.carbs) ?? 0,
     fat: numOrNull(it.fat_g ?? it.fat) ?? 0,
+    gi: numOrNull(it.gi),
     checked: true,
   }));
 }
@@ -1210,6 +1263,7 @@ function aiRowHtml(it, i) {
       <input type="number" class="aiProtein" data-i="${i}" value="${it.protein ?? ""}" placeholder="P g">
       <input type="number" class="aiCarbs" data-i="${i}" value="${it.carbs ?? ""}" placeholder="C g">
       <input type="number" class="aiFat" data-i="${i}" value="${it.fat ?? ""}" placeholder="F g">
+      <input type="number" class="aiGI" data-i="${i}" value="${it.gi ?? ""}" placeholder="GI" min="0" max="100">
     </div>
   `;
 }
@@ -1235,6 +1289,7 @@ aiResultsEl.addEventListener("input", (e) => {
   else if (e.target.classList.contains("aiProtein")) it.protein = numOrNull(e.target.value) ?? 0;
   else if (e.target.classList.contains("aiCarbs")) it.carbs = numOrNull(e.target.value) ?? 0;
   else if (e.target.classList.contains("aiFat")) it.fat = numOrNull(e.target.value) ?? 0;
+  else if (e.target.classList.contains("aiGI")) it.gi = numOrNull(e.target.value);
 });
 
 aiResultsEl.addEventListener("change", (e) => {
@@ -1259,6 +1314,7 @@ aiResultsEl.addEventListener("click", (e) => {
       protein: num(it.protein),
       carbs: num(it.carbs),
       fat: num(it.fat),
+      gi: it.gi ?? null,
     });
     count++;
   }
