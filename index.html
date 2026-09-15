@@ -1059,6 +1059,19 @@ async function callOpenRouter(basePayload, signal) {
   return res.json();
 }
 
+function extractMessageText(message) {
+  if (!message) return "";
+  const content = message.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === "string" ? part : part?.text || ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
 function parseItemsFromText(raw) {
   let jsonText = String(raw || "").trim();
   const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -1069,7 +1082,10 @@ function parseItemsFromText(raw) {
   } catch {
     const start = jsonText.indexOf("{");
     const end = jsonText.lastIndexOf("}");
-    if (start === -1 || end === -1) throw new Error("The model didn't return JSON.");
+    if (start === -1 || end === -1) {
+      const preview = jsonText.slice(0, 140).trim();
+      throw new Error(preview ? `The model didn't return JSON — it said: "${preview}"` : "The model didn't return JSON (empty reply).");
+    }
     obj = JSON.parse(jsonText.slice(start, end + 1));
   }
   const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj) ? obj : [];
@@ -1102,8 +1118,29 @@ async function analyzeWithAI(text, imageDataUrl, signal) {
   };
 
   const data = await callOpenRouter(basePayload, signal);
-  const raw = data?.choices?.[0]?.message?.content ?? "";
-  return parseItemsFromText(raw);
+  const message = data?.choices?.[0]?.message;
+  const raw = extractMessageText(message);
+  try {
+    return parseItemsFromText(raw);
+  } catch (err) {
+    // Models occasionally wrap up a web-search tool call with a plain-text
+    // summary instead of the requested JSON. Give it one chance to correct
+    // itself before surfacing the error.
+    const retryPayload = {
+      ...basePayload,
+      messages: [
+        ...basePayload.messages,
+        { role: "assistant", content: raw || "(empty reply)" },
+        {
+          role: "user",
+          content: "That reply was not valid JSON. Reply again with ONLY the JSON object described in the system prompt — no prose, no markdown fences, no citations.",
+        },
+      ],
+    };
+    const retryData = await callOpenRouter(retryPayload, signal);
+    const retryRaw = extractMessageText(retryData?.choices?.[0]?.message);
+    return parseItemsFromText(retryRaw);
+  }
 }
 
 let aiAbortController = null;
