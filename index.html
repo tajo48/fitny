@@ -276,11 +276,13 @@
   .tab-panel.active { display: flex; }
 
   /* ---------- install prompt ---------- */
+  /* Parked permanently in a corner — not a toast that pops up once and
+     fades away, just a persistent, always-there affordance for as long as
+     the app isn't installed yet. */
   .install-pill {
     position: fixed;
-    left: 50%;
+    right: calc(14px + env(safe-area-inset-right, 0px));
     bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-    transform: translate(-50%, 10px);
     display: flex;
     align-items: center;
     gap: 2px;
@@ -291,13 +293,9 @@
     box-shadow: 0 6px 24px rgba(23, 26, 35, 0.5);
     -webkit-backdrop-filter: blur(8px);
     backdrop-filter: blur(8px);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.35s ease, transform 0.35s ease;
     z-index: 10;
   }
   .install-pill[hidden] { display: none; }
-  .install-pill.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
   .install-pill button {
     font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
     background: transparent;
@@ -1853,55 +1851,41 @@ render();
 
 /* ---------- install prompt ---------- */
 
-/* A quiet pill at the bottom edge: shows whenever the app is installable
-   and not installed, and keeps showing — only an actual install hides it. */
+/* Parked in a corner for as long as the app isn't installed — shown
+   immediately (no delay/fade-in dance) and never hidden on its own; only an
+   actual successful install makes it go away. */
 
 const pill = document.getElementById("installPill");
 const installBtn = document.getElementById("installAccept");
 let deferredPrompt = null;
-let pillTimer = 0;
-let pillDismissed = false;
 
 function isInstalled() {
   return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 }
 
 function showPill() {
-  if (isInstalled() || pillDismissed) return;
-  clearTimeout(pillTimer);
+  if (isInstalled()) return;
   pill.hidden = false;
-  requestAnimationFrame(() => requestAnimationFrame(() => pill.classList.add("show")));
 }
 
 function hidePill() {
-  clearTimeout(pillTimer);
-  pill.classList.remove("show");
-  pillTimer = setTimeout(() => { pill.hidden = true; }, 400);
-}
-
-function showPillSoon() {
-  clearTimeout(pillTimer);
-  pillTimer = setTimeout(showPill, 1200);
+  pill.hidden = true;
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
   installBtn.textContent = "Install";
-  showPillSoon();
+  showPill();
 });
 
 window.addEventListener("appinstalled", () => {
   deferredPrompt = null;
-  pillDismissed = true;
   hidePill();
 });
 
 window.matchMedia("(display-mode: standalone)").addEventListener("change", (e) => {
-  if (e.matches) {
-    pillDismissed = true;
-    hidePill();
-  }
+  if (e.matches) hidePill();
 });
 
 installBtn.addEventListener("click", async () => {
@@ -1909,10 +1893,7 @@ installBtn.addEventListener("click", async () => {
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     deferredPrompt = null;
-    if (outcome === "accepted") {
-      pillDismissed = true;
-      hidePill();
-    }
+    if (outcome === "accepted") hidePill();
   } else {
     installBtn.textContent = "Share → Add to Home Screen";
   }
@@ -1923,7 +1904,7 @@ const isIOS =
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 if (isIOS && !("onbeforeinstallprompt" in window)) {
   installBtn.textContent = "Add to Home Screen";
-  showPillSoon();
+  showPill();
 }
 
 /* ---------- pwa ---------- */
