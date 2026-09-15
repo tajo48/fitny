@@ -367,8 +367,13 @@
           <textarea id="aiText" placeholder="e.g. A can of Coca-Cola and a slice of pepperoni pizza"></textarea>
         </div>
         <div class="field">
-          <label for="aiImageInput">Photo (optional)</label>
-          <input type="file" id="aiImageInput" accept="image/*" capture="environment">
+          <label>Photo (optional)</label>
+          <div class="row" style="flex-wrap:nowrap;">
+            <button type="button" id="aiTakePhoto" class="secondary">Take photo</button>
+            <button type="button" id="aiChooseFile" class="secondary">Choose file</button>
+          </div>
+          <input type="file" id="aiCameraInput" accept="image/*" capture="environment" hidden>
+          <input type="file" id="aiFileInput" accept="image/*" hidden>
         </div>
         <div class="aiPreviewWrap">
           <img id="aiPreview" hidden alt="Selected food photo">
@@ -654,7 +659,10 @@ const manualAddBtn = document.getElementById("manualAdd");
 
 const aiMealSelect = document.getElementById("aiMeal");
 const aiText = document.getElementById("aiText");
-const aiImageInput = document.getElementById("aiImageInput");
+const aiTakePhotoBtn = document.getElementById("aiTakePhoto");
+const aiChooseFileBtn = document.getElementById("aiChooseFile");
+const aiCameraInput = document.getElementById("aiCameraInput");
+const aiFileInput = document.getElementById("aiFileInput");
 const aiPreview = document.getElementById("aiPreview");
 const aiClearImageBtn = document.getElementById("aiClearImage");
 const aiAnalyzeBtn = document.getElementById("aiAnalyze");
@@ -961,9 +969,12 @@ Reply with ONLY one JSON object and nothing else — no markdown fences, no comm
 All numeric values describe the entire detected portion (not per 100 g). Always fill in every field with your
 best numeric estimate; never omit a field or use null.`;
 
-aiImageInput.addEventListener("change", () => {
-  const file = aiImageInput.files[0];
-  if (!file) { clearAiImage(); return; }
+aiTakePhotoBtn.addEventListener("click", () => aiCameraInput.click());
+aiChooseFileBtn.addEventListener("click", () => aiFileInput.click());
+
+function handleAiImageFile(input) {
+  const file = input.files[0];
+  if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     aiImageDataUrl = reader.result;
@@ -972,11 +983,14 @@ aiImageInput.addEventListener("change", () => {
     aiClearImageBtn.hidden = false;
   };
   reader.readAsDataURL(file);
-});
+}
+aiCameraInput.addEventListener("change", () => handleAiImageFile(aiCameraInput));
+aiFileInput.addEventListener("change", () => handleAiImageFile(aiFileInput));
 
 function clearAiImage() {
   aiImageDataUrl = null;
-  aiImageInput.value = "";
+  aiCameraInput.value = "";
+  aiFileInput.value = "";
   aiPreview.hidden = true;
   aiPreview.src = "";
   aiClearImageBtn.hidden = true;
