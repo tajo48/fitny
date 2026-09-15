@@ -488,7 +488,7 @@
         </div>
         <div class="field">
           <label for="modelInput">Model</label>
-          <input type="text" id="modelInput" placeholder="google/gemini-3.8-flash">
+          <input type="text" id="modelInput" placeholder="deepseek/deepseek-v4.1-flash:nitro">
         </div>
         <p class="hint">
           No key ships with this app — get one at openrouter.ai/keys and paste it above.
@@ -543,7 +543,12 @@
 
 const DB_KEY = "fitny_db_v1";
 const SETTINGS_KEY = "fitny_settings_v1";
-const DEFAULT_MODEL = "google/gemini-3.8-flash";
+const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash:nitro";
+/* Every default model this app has shipped, oldest first — used once per
+   upgrade to tell "still following the app default" apart from "the user
+   deliberately typed in their own model" for settings saved before the
+   `defaultModelSeen` field existed. */
+const KNOWN_DEFAULT_MODELS = ["openai/gpt-4o-mini", "google/gemini-3.8-flash", DEFAULT_MODEL];
 const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
 
@@ -568,16 +573,31 @@ function emptyGoals() {
   return { kcal: null, protein: null, carbs: null, fat: null, weight: null };
 }
 
+/* Decides whether a saved model value should follow along with a newly
+   shipped DEFAULT_MODEL, or stay put because the user chose it themselves.
+   `lastSeenDefault` is whatever DEFAULT_MODEL was the last time settings
+   were saved; if the stored model still matches it (or predates that
+   tracking and matches an older known default), it's treated as "still on
+   the default" and gets bumped forward. Anything else is a deliberate
+   custom choice and is left alone. */
+function resolveModel(savedModel, lastSeenDefault) {
+  if (!savedModel) return DEFAULT_MODEL;
+  if (savedModel === DEFAULT_MODEL) return DEFAULT_MODEL;
+  const wasFollowingDefault = lastSeenDefault ? savedModel === lastSeenDefault : KNOWN_DEFAULT_MODELS.includes(savedModel);
+  return wasFollowingDefault ? DEFAULT_MODEL : savedModel;
+}
+
 function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       const goals = { ...emptyGoals(), ...(parsed.goals || {}) };
-      return { apiKey: parsed.apiKey || "", model: parsed.model || DEFAULT_MODEL, goals };
+      const model = resolveModel(parsed.model, parsed.defaultModelSeen);
+      return { apiKey: parsed.apiKey || "", model, defaultModelSeen: DEFAULT_MODEL, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -663,6 +683,7 @@ function defaultMeal() {
 
 const db = loadDB();
 const settings = loadSettings();
+saveSettings(); // persists any default-model migration and defaultModelSeen right away
 let currentDate = todayIso();
 let currentRange = 30;
 let activeTab = "log";
@@ -1635,7 +1656,8 @@ importFile.addEventListener("change", () => {
       saveDB();
       if (hasSettings) {
         settings.apiKey = parsed.settings.apiKey || "";
-        settings.model = parsed.settings.model || DEFAULT_MODEL;
+        settings.model = resolveModel(parsed.settings.model, parsed.settings.defaultModelSeen);
+        settings.defaultModelSeen = DEFAULT_MODEL;
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
         saveSettings();
         apiKeyInput.value = settings.apiKey;
