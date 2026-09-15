@@ -130,9 +130,11 @@
   .daybar input[type="date"] { flex: 1 1 auto; }
   .daybar button { padding: 8px 14px 6px; }
 
-  .weightcard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .weightcard label { font-size: 14px; color: #a5adce; }
-  .weightcard input { width: 110px; }
+  .weightcard { display: flex; flex-direction: column; gap: 6px; }
+  .weightcardRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .weightcardRow label { font-size: 14px; color: #a5adce; }
+  .weightcardRow input { width: 110px; }
+  #weightGoalHint:empty { display: none; }
 
   .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
@@ -294,8 +296,11 @@
     </div>
 
     <div class="card weightcard">
-      <label for="weightInput">Body weight (kg)</label>
-      <input type="number" id="weightInput" step="0.1" inputmode="decimal" placeholder="—">
+      <div class="weightcardRow">
+        <label for="weightInput">Body weight (kg)</label>
+        <input type="number" id="weightInput" step="0.1" inputmode="decimal" placeholder="—">
+      </div>
+      <p class="hint" id="weightGoalHint"></p>
     </div>
 
     <div class="card" id="totalsCard"></div>
@@ -438,6 +443,9 @@
           <div class="field"><label for="goalCarbs">Carbs (g)</label><input type="number" id="goalCarbs" inputmode="decimal" min="0"></div>
           <div class="field"><label for="goalFat">Fat (g)</label><input type="number" id="goalFat" inputmode="decimal" min="0"></div>
         </div>
+        <div class="row">
+          <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="number" id="goalWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
+        </div>
       </div>
 
       <div class="card">
@@ -490,7 +498,7 @@ function saveDB() {
 }
 
 function emptyGoals() {
-  return { kcal: null, protein: null, carbs: null, fat: null };
+  return { kcal: null, protein: null, carbs: null, fat: null, weight: null };
 }
 
 function loadSettings() {
@@ -635,6 +643,8 @@ const goalKcal = document.getElementById("goalKcal");
 const goalProtein = document.getElementById("goalProtein");
 const goalCarbs = document.getElementById("goalCarbs");
 const goalFat = document.getElementById("goalFat");
+const goalWeight = document.getElementById("goalWeight");
+const weightGoalHint = document.getElementById("weightGoalHint");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importFile = document.getElementById("importFile");
@@ -648,6 +658,7 @@ goalKcal.value = settings.goals.kcal ?? "";
 goalProtein.value = settings.goals.protein ?? "";
 goalCarbs.value = settings.goals.carbs ?? "";
 goalFat.value = settings.goals.fat ?? "";
+goalWeight.value = settings.goals.weight ?? "";
 
 /* ============================================================
    Rendering — Log tab
@@ -728,12 +739,25 @@ function renderMeals() {
   }).join("");
 }
 
+function renderWeightGoalHint() {
+  const day = getDay(currentDate);
+  const goal = settings.goals.weight;
+  if (!goal || !day || typeof day.weight !== "number") {
+    weightGoalHint.textContent = goal ? `Goal: ${goal} kg` : "";
+    return;
+  }
+  const delta = day.weight - goal;
+  const sign = delta > 0 ? "+" : "";
+  weightGoalHint.textContent = `Goal: ${goal} kg (${sign}${delta.toFixed(1)} kg)`;
+}
+
 function render() {
   dateInput.value = currentDate;
   const day = getDay(currentDate);
   weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
   renderTotals();
   renderMeals();
+  renderWeightGoalHint();
   if (activeTab === "history") {
     drawAllCharts();
     renderWeightList();
@@ -1182,6 +1206,8 @@ function drawWeightChart() {
   const entries = filterByRange(weightEntries());
   drawTimeSeriesChart(weightCanvas, wctx, {
     series: [{ color: "#8caaee", points: entries.map((e) => ({ date: e.date, y: e.weight })) }],
+    goal: settings.goals.weight || null,
+    goalColor: "#e78284",
     valueFmt: (v) => v.toFixed(1),
     unit: " kg",
     emptyText: "No weight logged in this range",
@@ -1241,7 +1267,10 @@ weightListEl.addEventListener("change", (e) => {
   const date = e.target.dataset.date;
   ensureDay(date).weight = numOrNull(e.target.value);
   saveDB();
-  if (date === currentDate) weightInput.value = numOrNull(e.target.value) ?? "";
+  if (date === currentDate) {
+    weightInput.value = numOrNull(e.target.value) ?? "";
+    renderWeightGoalHint();
+  }
   drawWeightChart();
   renderWeightList();
 });
@@ -1252,7 +1281,10 @@ weightListEl.addEventListener("click", (e) => {
   const date = btn.dataset.date;
   if (db.days[date]) db.days[date].weight = null;
   saveDB();
-  if (date === currentDate) weightInput.value = "";
+  if (date === currentDate) {
+    weightInput.value = "";
+    renderWeightGoalHint();
+  }
   drawWeightChart();
   renderWeightList();
 });
@@ -1315,6 +1347,12 @@ wireGoalInput(goalKcal, "kcal");
 wireGoalInput(goalProtein, "protein");
 wireGoalInput(goalCarbs, "carbs");
 wireGoalInput(goalFat, "fat");
+goalWeight.addEventListener("input", () => {
+  settings.goals.weight = numOrNull(goalWeight.value);
+  saveSettings();
+  renderWeightGoalHint();
+  if (activeTab === "history") drawWeightChart();
+});
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
   apiKeyInput.type = show ? "text" : "password";
