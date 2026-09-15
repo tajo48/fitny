@@ -16,7 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
   html {
     overscroll-behavior: none;
@@ -106,12 +106,23 @@
     padding: 9px 16px 6px;
     cursor: pointer;
     touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: transform 0.08s ease;
   }
   button:disabled { opacity: 0.35; cursor: default; }
   button:focus-visible { outline: 2px solid #8caaee; outline-offset: 2px; }
   button.secondary { background: transparent; color: #8caaee; }
   button.danger { background: #e78284; }
   button.small { font-size: 13px; padding: 5px 10px 4px; }
+  button:active:not(:disabled) {
+    background: transparent;
+    border-color: #8caaee;
+    color: #8caaee;
+    transform: scale(0.97);
+  }
+  button.secondary:active:not(:disabled) { background: #8caaee; color: #292c3c; }
+  button.danger:active:not(:disabled) { background: transparent; color: #e78284; border-color: #e78284; }
   @media (hover: hover) {
     button:hover:not(:disabled) { background: transparent; border-color: #8caaee; color: #8caaee; }
     button.secondary:hover:not(:disabled) { background: #8caaee; color: #292c3c; }
@@ -189,8 +200,9 @@
     font-size: 16px;
     flex: 0 0 auto;
   }
+  button.itemDel:active:not(:disabled) { background: #e78284; border-color: #e78284; color: #292c3c; }
   @media (hover: hover) {
-    .itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
+    button.itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
   }
 
   .historyRow {
@@ -985,7 +997,9 @@ calories and macros using standard nutrition references, scaled to a sensible se
 Reply with ONLY one JSON object and nothing else — no markdown fences, no commentary — matching exactly this shape:
 {"items":[{"name":string,"grams":number,"kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number}]}
 All numeric values describe the entire detected portion (not per 100 g). Always fill in every field with your
-best numeric estimate; never omit a field or use null.`;
+best numeric estimate; never omit a field or use null. If you use the web search tool, that is only an
+intermediate step — your final reply message must still be nothing but that one JSON object, never a summary,
+citations, or plain-text answer.`;
 
 aiTakePhotoBtn.addEventListener("click", () => aiCameraInput.click());
 aiChooseFileBtn.addEventListener("click", () => aiFileInput.click());
