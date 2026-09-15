@@ -18,7 +18,12 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  html { overscroll-behavior: none; }
+  html {
+    overscroll-behavior: none;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* old Edge/IE */
+  }
+  html::-webkit-scrollbar { display: none; /* Chrome/Safari/WebKit */ }
 
   body {
     background: #232634;
@@ -31,7 +36,10 @@
     font-family: Verdana, "DejaVu Sans", Geneva, sans-serif;
     color: #c6d0f5;
     overscroll-behavior: none;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  body::-webkit-scrollbar { display: none; }
 
   h1, h2, h3 {
     font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
@@ -71,7 +79,9 @@
     touch-action: manipulation;
   }
   .tab.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
-  .tab:hover:not(.active) { color: #c6d0f5; border-color: #8caaee; }
+  @media (hover: hover) {
+    .tab:hover:not(.active) { color: #c6d0f5; border-color: #8caaee; }
+  }
 
   /* ---------- generic building blocks ---------- */
   .card {
@@ -97,14 +107,16 @@
     cursor: pointer;
     touch-action: manipulation;
   }
-  button:hover:not(:disabled) { background: transparent; border-color: #8caaee; color: #8caaee; }
   button:disabled { opacity: 0.35; cursor: default; }
   button:focus-visible { outline: 2px solid #8caaee; outline-offset: 2px; }
   button.secondary { background: transparent; color: #8caaee; }
-  button.secondary:hover:not(:disabled) { background: #8caaee; color: #292c3c; }
   button.danger { background: #e78284; }
-  button.danger:hover:not(:disabled) { background: transparent; color: #e78284; border-color: #e78284; }
   button.small { font-size: 13px; padding: 5px 10px 4px; }
+  @media (hover: hover) {
+    button:hover:not(:disabled) { background: transparent; border-color: #8caaee; color: #8caaee; }
+    button.secondary:hover:not(:disabled) { background: #8caaee; color: #292c3c; }
+    button.danger:hover:not(:disabled) { background: transparent; color: #e78284; border-color: #e78284; }
+  }
 
   input, select, textarea {
     font-family: Verdana, "DejaVu Sans", Geneva, sans-serif;
@@ -129,6 +141,7 @@
   .daybar { display: flex; align-items: center; gap: 8px; width: 100%; }
   .daybar input[type="date"] { flex: 1 1 auto; }
   .daybar button { padding: 8px 14px 6px; }
+  #todayBtn.current { background: #8caaee; color: #292c3c; border-color: #8caaee; }
 
   .weightcard { display: flex; flex-direction: column; gap: 6px; }
   .weightcardRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -176,7 +189,9 @@
     font-size: 16px;
     flex: 0 0 auto;
   }
-  .itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
+  @media (hover: hover) {
+    .itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
+  }
 
   .historyRow {
     display: flex;
@@ -276,7 +291,9 @@
     padding: 5px 8px 2px;
     white-space: nowrap;
   }
-  .install-pill button:hover:not(:disabled) { background: transparent; color: #c6d0f5; }
+  @media (hover: hover) {
+    .install-pill button:hover:not(:disabled) { background: transparent; color: #c6d0f5; }
+  }
 </style>
 </head>
 <body>
@@ -795,6 +812,7 @@ function renderWeightGoalHint() {
 
 function render() {
   dateInput.value = currentDate;
+  todayBtn.classList.toggle("current", currentDate === todayIso());
   const day = getDay(currentDate);
   weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
   renderTotals();
