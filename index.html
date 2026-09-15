@@ -93,6 +93,8 @@
   }
 
   .hint { font-size: 12px; color: #a5adce; line-height: 1.5; }
+  .hint a { color: #8caaee; }
+  .hint a:visited { color: #8caaee; }
 
   button {
     font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
@@ -320,9 +322,59 @@
   @media (hover: hover) {
     .install-pill button:hover:not(:disabled) { background: transparent; color: #c6d0f5; }
   }
+
+  /* ---------- onboarding modal ---------- */
+  .modalOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(23, 26, 35, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 14px;
+    z-index: 50;
+  }
+  .modalOverlay[hidden] { display: none; }
+  .modalCard {
+    background: #303446;
+    border: 2px solid #51576d;
+    border-radius: 8px;
+    padding: 18px 18px 16px;
+    width: 100%;
+    max-width: 420px;
+    max-height: calc(100% - 28px);
+    overflow-y: auto;
+  }
+  .modalCard h2 { font-size: 24px; margin-bottom: 8px; }
+  .modalCard .hint { margin-bottom: 10px; }
 </style>
 </head>
 <body>
+
+<div id="onboardOverlay" class="modalOverlay" hidden>
+  <div class="modalCard">
+    <h2>Welcome to Fitny</h2>
+    <p class="hint">Enter your current weight and goal to get sensible starting calorie &amp; macro targets. You can fine-tune (or ignore) all of this later in Settings.</p>
+    <div class="field">
+      <label for="onboardWeight">Current body weight (kg)</label>
+      <input type="number" id="onboardWeight" step="0.1" inputmode="decimal" placeholder="e.g. 75">
+    </div>
+    <div class="field">
+      <label for="onboardGoal">Goal</label>
+      <select id="onboardGoal">
+        <option value="lose">Lose weight</option>
+        <option value="maintain" selected>Maintain weight</option>
+        <option value="gain">Gain weight / build muscle</option>
+      </select>
+    </div>
+    <p class="hint" id="onboardPreview">Enter your weight to see suggested targets.</p>
+    <p class="hint">Want AI food-photo analysis? It needs a free OpenRouter API key — you can add one any time in Settings.</p>
+    <div class="row" style="flex-wrap:nowrap;">
+      <button id="onboardSkip" type="button" class="secondary">Skip for now</button>
+      <button id="onboardStart" type="button">Save &amp; get started</button>
+    </div>
+  </div>
+</div>
 
 <div class="wrap">
 
@@ -362,12 +414,12 @@
     <div class="card addcard">
       <h3>Add food</h3>
       <div class="addModeSwitch">
-        <button class="modeBtn" data-mode="manual" type="button">Add by hand</button>
-        <button class="modeBtn active" data-mode="ai" type="button">Add with AI</button>
+        <button class="modeBtn active" data-mode="manual" type="button">Add by hand</button>
+        <button class="modeBtn" data-mode="ai" type="button">Add with AI</button>
         <button class="modeBtn" data-mode="history" type="button">From history</button>
       </div>
 
-      <div id="manualForm" class="addForm" hidden>
+      <div id="manualForm" class="addForm">
         <div class="field">
           <label for="manualMeal">Meal</label>
           <select id="manualMeal">
@@ -397,7 +449,7 @@
         <button id="manualAdd" type="button">Add item</button>
       </div>
 
-      <div id="aiForm" class="addForm">
+      <div id="aiForm" class="addForm" hidden>
         <div class="field">
           <label for="aiMeal">Meal</label>
           <select id="aiMeal">
@@ -511,12 +563,17 @@
           <label for="modelInput">Model</label>
           <input type="text" id="modelInput" placeholder="deepseek/deepseek-v4.1-flash:nitro">
         </div>
+        <p class="hint" style="margin-bottom:8px;"><strong>No key ships with this app</strong> — "Add with AI" needs your own free OpenRouter key to talk to an AI model. To get one:</p>
+        <ol class="hint" style="margin:0 0 10px 18px; padding:0;">
+          <li>Open <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer">openrouter.ai/keys</a> and sign in (or create a free account).</li>
+          <li>Click <strong>Create key</strong>, name it anything, and copy the key it gives you.</li>
+          <li>Paste it into the field above.</li>
+        </ol>
         <p class="hint">
-          No key ships with this app — get one at openrouter.ai/keys and paste it above.
-          It's saved in this browser's local storage and sent directly from your device to
-          OpenRouter. It's included in DB export/import along with your model and goals, so keep
-          exported files private. Pick any OpenRouter model slug that supports image input for
-          photo analysis.
+          The key is saved only in this browser's local storage and sent directly from your device
+          to OpenRouter — it never touches any server of ours. It's included in DB export/import
+          along with your model and goals, so keep exported files private. Pick any OpenRouter
+          model slug that supports image input for photo analysis.
         </p>
       </div>
 
@@ -533,6 +590,18 @@
         </div>
         <div class="row">
           <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="number" id="goalWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
+        </div>
+        <div class="field">
+          <label for="goalTypeSelect">Suggest targets from weight</label>
+          <div class="row" style="flex-wrap:nowrap;">
+            <select id="goalTypeSelect">
+              <option value="lose">Lose weight</option>
+              <option value="maintain" selected>Maintain weight</option>
+              <option value="gain">Gain weight / build muscle</option>
+            </select>
+            <button id="autofillGoalsBtn" type="button" class="secondary">Autofill</button>
+          </div>
+          <p class="hint" style="margin-top:6px;">Uses your most recently logged body weight (or the goal weight above) to fill in the kcal/protein/carbs/fat goals above — overwrites whatever's currently set.</p>
         </div>
       </div>
 
@@ -594,6 +663,29 @@ function emptyGoals() {
   return { kcal: null, protein: null, carbs: null, fat: null, weight: null };
 }
 
+const GOAL_TYPES = ["lose", "maintain", "gain"];
+/* Rough, deliberately simple kcal-per-kg-of-bodyweight rules of thumb (not a
+   substitute for real coaching) used to seed sensible starting goals for
+   anyone who hasn't set their own yet — a reasonable default beats leaving
+   every goal blank. Protein/fat are set from common per-kg targets and carbs
+   fill in whatever calories are left. */
+const GOAL_KCAL_PER_KG = { lose: 26, maintain: 30, gain: 34 };
+
+function normalizeGoalType(v) {
+  return GOAL_TYPES.includes(v) ? v : "maintain";
+}
+
+function computeDefaultGoals(weightKg, goalType) {
+  const w = Number(weightKg);
+  if (!Number.isFinite(w) || w <= 0) return null;
+  const kcalPerKg = GOAL_KCAL_PER_KG[normalizeGoalType(goalType)];
+  const kcal = Math.round(w * kcalPerKg);
+  const protein = Math.round(w * 1.8);
+  const fat = Math.round(w * 0.8);
+  const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+  return { kcal, protein, carbs, fat };
+}
+
 /* Decides whether a saved model value should follow along with a newly
    shipped DEFAULT_MODEL, or stay put because the user chose it themselves.
    `lastSeenDefault` is whatever DEFAULT_MODEL was the last time settings
@@ -615,10 +707,11 @@ function loadSettings() {
       const parsed = JSON.parse(raw);
       const goals = { ...emptyGoals(), ...(parsed.goals || {}) };
       const model = resolveModel(parsed.model, parsed.defaultModelSeen);
-      return { apiKey: parsed.apiKey || "", model, defaultModelSeen: DEFAULT_MODEL, goals };
+      const goalType = normalizeGoalType(parsed.goalType);
+      return { apiKey: parsed.apiKey || "", model, goalType, defaultModelSeen: DEFAULT_MODEL, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -801,21 +894,31 @@ const goalProtein = document.getElementById("goalProtein");
 const goalCarbs = document.getElementById("goalCarbs");
 const goalFat = document.getElementById("goalFat");
 const goalWeight = document.getElementById("goalWeight");
+const goalTypeSelect = document.getElementById("goalTypeSelect");
+const autofillGoalsBtn = document.getElementById("autofillGoalsBtn");
 const weightGoalHint = document.getElementById("weightGoalHint");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
 const importFile = document.getElementById("importFile");
 const clearBtn = document.getElementById("clearBtn");
 
+/* Pushes settings.goals into the four goal inputs — shared by initial load,
+   DB import, onboarding, and the settings "Autofill" button so they never
+   drift out of sync with each other. */
+function syncGoalInputs() {
+  goalKcal.value = settings.goals.kcal ?? "";
+  goalProtein.value = settings.goals.protein ?? "";
+  goalCarbs.value = settings.goals.carbs ?? "";
+  goalFat.value = settings.goals.fat ?? "";
+  goalWeight.value = settings.goals.weight ?? "";
+}
+
 manualMeal.value = defaultMeal();
 aiMealSelect.value = defaultMeal();
 apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
-goalKcal.value = settings.goals.kcal ?? "";
-goalProtein.value = settings.goals.protein ?? "";
-goalCarbs.value = settings.goals.carbs ?? "";
-goalFat.value = settings.goals.fat ?? "";
-goalWeight.value = settings.goals.weight ?? "";
+goalTypeSelect.value = settings.goalType;
+syncGoalInputs();
 
 /* ============================================================
    Rendering — Log tab
@@ -1017,6 +1120,30 @@ mealsWrap.addEventListener("click", (e) => {
 const manualForm = document.getElementById("manualForm");
 const aiForm = document.getElementById("aiForm");
 const historyForm = document.getElementById("historyForm");
+
+/* Sends the user straight to the Settings tab and drops focus into the API
+   key field — used any time AI mode is picked (or "Analyze" is clicked)
+   without a key set yet, instead of leaving people to hunt for it. */
+function focusApiKeySetting() {
+  const settingsTabBtn = document.querySelector('.tab[data-tab="settings"]');
+  if (settingsTabBtn) settingsTabBtn.click();
+  apiKeyInput.focus();
+  apiKeyInput.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function updateAiKeyNotice() {
+  if (settings.apiKey) {
+    if (aiStatus.dataset.keyNotice) {
+      aiStatus.innerHTML = "";
+      delete aiStatus.dataset.keyNotice;
+    }
+    return;
+  }
+  aiStatus.innerHTML = 'No OpenRouter API key set yet. <button type="button" id="aiGoToKey" class="secondary small">Add key in Settings</button>';
+  aiStatus.dataset.keyNotice = "1";
+  document.getElementById("aiGoToKey").addEventListener("click", focusApiKeySetting);
+}
+
 document.querySelectorAll(".modeBtn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
@@ -1025,6 +1152,7 @@ document.querySelectorAll(".modeBtn").forEach((btn) => {
     aiForm.hidden = mode !== "ai";
     historyForm.hidden = mode !== "history";
     if (mode === "history") renderHistoryResults();
+    if (mode === "ai") updateAiKeyNotice();
   });
 });
 
@@ -1312,8 +1440,9 @@ let aiAbortController = null;
 
 aiAnalyzeBtn.addEventListener("click", async () => {
   aiStatus.textContent = "";
+  delete aiStatus.dataset.keyNotice;
   if (!settings.apiKey) {
-    aiStatus.textContent = "Add your OpenRouter API key in Settings first.";
+    updateAiKeyNotice();
     return;
   }
   if (!aiText.value.trim() && !aiImageDataUrl) {
@@ -1722,6 +1851,7 @@ tabButtons.forEach((btn) => {
 apiKeyInput.addEventListener("input", () => {
   settings.apiKey = apiKeyInput.value.trim();
   saveSettings();
+  if (!aiForm.hidden) updateAiKeyNotice();
 });
 modelInput.addEventListener("input", () => {
   settings.model = modelInput.value.trim() || DEFAULT_MODEL;
@@ -1779,6 +1909,26 @@ goalWeight.addEventListener("input", () => {
   renderWeightGoalHint();
   if (activeTab === "history") drawWeightChart();
 });
+goalTypeSelect.addEventListener("change", () => {
+  settings.goalType = goalTypeSelect.value;
+  saveSettings();
+});
+autofillGoalsBtn.addEventListener("click", () => {
+  const entries = weightEntries();
+  const w = entries.length ? entries[entries.length - 1].weight : (settings.goals.weight ?? numOrNull(weightInput.value));
+  const defaults = computeDefaultGoals(w, goalTypeSelect.value);
+  if (!defaults) {
+    alert("Log a body weight first (on the Log tab) or set a goal weight above.");
+    return;
+  }
+  settings.goals.kcal = defaults.kcal;
+  settings.goals.protein = defaults.protein;
+  settings.goals.carbs = defaults.carbs;
+  settings.goals.fat = defaults.fat;
+  syncGoalInputs();
+  saveSettings();
+  renderTotals();
+});
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
   apiKeyInput.type = show ? "text" : "password";
@@ -1820,15 +1970,13 @@ importFile.addEventListener("change", () => {
         settings.apiKey = parsed.settings.apiKey || "";
         settings.model = resolveModel(parsed.settings.model, parsed.settings.defaultModelSeen);
         settings.defaultModelSeen = DEFAULT_MODEL;
+        settings.goalType = normalizeGoalType(parsed.settings.goalType);
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
-        goalKcal.value = settings.goals.kcal ?? "";
-        goalProtein.value = settings.goals.protein ?? "";
-        goalCarbs.value = settings.goals.carbs ?? "";
-        goalFat.value = settings.goals.fat ?? "";
-        goalWeight.value = settings.goals.weight ?? "";
+        goalTypeSelect.value = settings.goalType;
+        syncGoalInputs();
       }
       currentDate = todayIso();
       render();
@@ -1848,6 +1996,61 @@ clearBtn.addEventListener("click", () => {
   saveDB();
   render();
 });
+
+/* ============================================================
+   Onboarding ("hello screen")
+   ============================================================ */
+
+const ONBOARD_KEY = "fitny_onboarded_v1";
+const onboardOverlay = document.getElementById("onboardOverlay");
+const onboardWeight = document.getElementById("onboardWeight");
+const onboardGoal = document.getElementById("onboardGoal");
+const onboardPreview = document.getElementById("onboardPreview");
+const onboardSkip = document.getElementById("onboardSkip");
+const onboardStart = document.getElementById("onboardStart");
+
+function updateOnboardPreview() {
+  const defaults = computeDefaultGoals(numOrNull(onboardWeight.value), onboardGoal.value);
+  onboardPreview.textContent = defaults
+    ? `Suggested: ${defaults.kcal} kcal · ${defaults.protein}g protein · ${defaults.carbs}g carbs · ${defaults.fat}g fat`
+    : "Enter your weight to see suggested targets.";
+}
+onboardWeight.addEventListener("input", updateOnboardPreview);
+onboardGoal.addEventListener("change", updateOnboardPreview);
+
+function closeOnboarding() {
+  localStorage.setItem(ONBOARD_KEY, "1");
+  onboardOverlay.hidden = true;
+}
+
+onboardSkip.addEventListener("click", closeOnboarding);
+onboardStart.addEventListener("click", () => {
+  const w = numOrNull(onboardWeight.value);
+  if (w && w > 0) {
+    ensureDay(todayIso()).weight = w;
+    saveDB();
+    settings.goalType = normalizeGoalType(onboardGoal.value);
+    const defaults = computeDefaultGoals(w, settings.goalType);
+    if (defaults) {
+      settings.goals.kcal = defaults.kcal;
+      settings.goals.protein = defaults.protein;
+      settings.goals.carbs = defaults.carbs;
+      settings.goals.fat = defaults.fat;
+      syncGoalInputs();
+    }
+    goalTypeSelect.value = settings.goalType;
+    saveSettings();
+  }
+  closeOnboarding();
+  render();
+});
+
+// Only greet genuinely new installs — anyone with existing logged days or
+// an already-configured kcal goal has clearly used the app before, even if
+// they predate this onboarding flow, so don't interrupt them with it.
+if (!localStorage.getItem(ONBOARD_KEY) && Object.keys(db.days).length === 0 && settings.goals.kcal == null) {
+  onboardOverlay.hidden = false;
+}
 
 /* ============================================================
    Boot
