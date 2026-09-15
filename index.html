@@ -178,6 +178,16 @@
   }
   .itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
 
+  .historyRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid #414559;
+  }
+  .historyRow:first-of-type { border-top: none; }
+  .historyAdd { flex: 0 0 auto; }
+
   .addcard { display: flex; flex-direction: column; gap: 12px; }
   .addModeSwitch { display: flex; gap: 8px; }
   .modeBtn { flex: 1; background: transparent; color: #a5adce; }
@@ -312,6 +322,7 @@
       <div class="addModeSwitch">
         <button class="modeBtn active" data-mode="manual" type="button">Add by hand</button>
         <button class="modeBtn" data-mode="ai" type="button">Add with AI</button>
+        <button class="modeBtn" data-mode="history" type="button">From history</button>
       </div>
 
       <div id="manualForm" class="addForm">
@@ -369,6 +380,24 @@
         </div>
         <p class="hint" id="aiStatus"></p>
         <div id="aiResults" hidden></div>
+      </div>
+
+      <div id="historyForm" class="addForm" hidden>
+        <div class="field">
+          <label for="historyMeal">Meal</label>
+          <select id="historyMeal">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snacks</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="historySearch">Search previous meals</label>
+          <input type="text" id="historySearch" placeholder="e.g. chicken">
+        </div>
+        <p class="hint" id="historyStatus"></p>
+        <div id="historyResults"></div>
       </div>
     </div>
   </section>
@@ -804,13 +833,94 @@ mealsWrap.addEventListener("click", (e) => {
 
 const manualForm = document.getElementById("manualForm");
 const aiForm = document.getElementById("aiForm");
+const historyForm = document.getElementById("historyForm");
 document.querySelectorAll(".modeBtn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
     const mode = btn.dataset.mode;
     manualForm.hidden = mode !== "manual";
     aiForm.hidden = mode !== "ai";
+    historyForm.hidden = mode !== "history";
+    if (mode === "history") renderHistoryResults();
   });
+});
+
+/* ---------- add from history ---------- */
+
+const historyMealSelect = document.getElementById("historyMeal");
+const historySearch = document.getElementById("historySearch");
+const historyResultsEl = document.getElementById("historyResults");
+const historyStatus = document.getElementById("historyStatus");
+historyMealSelect.value = defaultMeal();
+let historyItemsCache = [];
+
+function pastItems() {
+  const map = new Map();
+  for (const date of Object.keys(db.days).sort()) {
+    const day = db.days[date];
+    for (const meal of MEALS) {
+      for (const it of day.meals[meal] || []) {
+        const key = String(it.name || "").trim().toLowerCase();
+        if (!key) continue;
+        const count = (map.get(key)?.count || 0) + 1;
+        map.set(key, { name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, lastDate: date, count });
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
+function historyRowHtml(it, i) {
+  return `
+    <div class="historyRow">
+      <div class="itemMain">
+        <span class="itemName">${esc(it.name)}</span>
+        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+      </div>
+      <div class="itemMacros">
+        <span>${Math.round(num(it.kcal))} kcal</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+      </div>
+      <button type="button" class="historyAdd small" data-i="${i}">Add</button>
+    </div>
+  `;
+}
+
+function renderHistoryResults() {
+  const query = historySearch.value.trim().toLowerCase();
+  let items = pastItems();
+  if (query) items = items.filter((it) => it.name.toLowerCase().includes(query));
+  items.sort((a, b) => b.count - a.count || (a.lastDate < b.lastDate ? 1 : -1));
+  items = items.slice(0, 40);
+  historyItemsCache = items;
+  historyResultsEl.innerHTML = items.length
+    ? items.map(historyRowHtml).join("")
+    : `<p class="hint">${query ? "No previous meals match your search." : "Nothing logged yet \u2014 items you add show up here next time."}</p>`;
+}
+
+historySearch.addEventListener("input", renderHistoryResults);
+
+historyResultsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".historyAdd");
+  if (!btn) return;
+  const it = historyItemsCache[Number(btn.dataset.i)];
+  if (!it) return;
+  const meal = historyMealSelect.value;
+  const day = ensureDay(currentDate);
+  day.meals[meal].push({
+    id: uid(),
+    name: it.name,
+    grams: it.grams,
+    kcal: num(it.kcal),
+    protein: num(it.protein),
+    carbs: num(it.carbs),
+    fat: num(it.fat),
+  });
+  saveDB();
+  historyStatus.textContent = `Added "${it.name}" to ${MEAL_LABELS[meal]}.`;
+  render();
 });
 
 /* ---------- manual add ---------- */
