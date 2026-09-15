@@ -426,9 +426,10 @@
         </div>
         <p class="hint">
           No key ships with this app — get one at openrouter.ai/keys and paste it above.
-          It's saved only in this browser's local storage and sent directly from your device to
-          OpenRouter; it's never included in DB export/import. Pick any OpenRouter model slug that
-          supports image input for photo analysis.
+          It's saved in this browser's local storage and sent directly from your device to
+          OpenRouter. It's included in DB export/import along with your model and goals, so keep
+          exported files private. Pick any OpenRouter model slug that supports image input for
+          photo analysis.
         </p>
       </div>
 
@@ -450,7 +451,7 @@
 
       <div class="card">
         <h3 style="margin-bottom:8px;">Data</h3>
-        <p class="hint">Export your log as a JSON file, or import one on another device. The API key is never included.</p>
+        <p class="hint">Export everything — log, weight, settings, API key and goals — as a JSON file, or import one on another device. Keep exported files private since they contain your API key.</p>
         <div class="dataBtns">
           <button id="exportBtn" type="button">Export DB</button>
           <button id="importBtn" type="button" class="secondary">Import DB</button>
@@ -1394,7 +1395,7 @@ toggleKeyVis.addEventListener("click", () => {
 });
 
 exportBtn.addEventListener("click", () => {
-  const payload = { version: 1, exportedAt: new Date().toISOString(), days: db.days };
+  const payload = { version: 2, exportedAt: new Date().toISOString(), days: db.days, settings };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -1417,9 +1418,26 @@ importFile.addEventListener("change", () => {
     try {
       const parsed = JSON.parse(reader.result);
       if (!parsed || typeof parsed.days !== "object" || !parsed.days) throw new Error("Not a fitny export file.");
-      if (!confirm("Import will replace all current log data. Continue?")) return;
+      const hasSettings = parsed.settings && typeof parsed.settings === "object";
+      const msg = hasSettings
+        ? "Import will replace all current log data and settings (including the OpenRouter API key). Continue?"
+        : "Import will replace all current log data. Continue?";
+      if (!confirm(msg)) return;
       db.days = parsed.days;
       saveDB();
+      if (hasSettings) {
+        settings.apiKey = parsed.settings.apiKey || "";
+        settings.model = parsed.settings.model || DEFAULT_MODEL;
+        settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
+        saveSettings();
+        apiKeyInput.value = settings.apiKey;
+        modelInput.value = settings.model;
+        goalKcal.value = settings.goals.kcal ?? "";
+        goalProtein.value = settings.goals.protein ?? "";
+        goalCarbs.value = settings.goals.carbs ?? "";
+        goalFat.value = settings.goals.fat ?? "";
+        goalWeight.value = settings.goals.weight ?? "";
+      }
       currentDate = todayIso();
       render();
       alert("Import complete.");
