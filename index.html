@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Fitny</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#232634">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Fitny">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { overscroll-behavior: none; }
+
+  body {
+    background: #232634;
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 14px calc(24px + env(safe-area-inset-bottom, 0px));
+    font-family: Verdana, "DejaVu Sans", Geneva, sans-serif;
+    color: #c6d0f5;
+    overscroll-behavior: none;
+  }
+
+  h1, h2, h3 {
+    font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #8caaee;
+    font-weight: normal;
+  }
+
+  .wrap { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ---------- top bar ---------- */
+  .topbar {
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .brandRow { display: flex; align-items: center; gap: 8px; }
+  .brandRow img { width: 30px; height: 30px; border-radius: 7px; display: block; }
+  .brandRow h1 { font-size: 26px; }
+
+  .tabs { display: flex; gap: 6px; }
+  .tab {
+    font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
+    font-size: 15px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    background: transparent;
+    color: #a5adce;
+    border: 2px solid #51576d;
+    border-radius: 6px;
+    padding: 6px 12px 4px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  .tab.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
+  .tab:hover:not(.active) { color: #c6d0f5; border-color: #8caaee; }
+
+  /* ---------- generic building blocks ---------- */
+  .card {
+    background: #303446;
+    border: 2px solid #51576d;
+    border-radius: 6px;
+    padding: 14px 16px;
+    width: 100%;
+  }
+
+  .hint { font-size: 12px; color: #a5adce; line-height: 1.5; }
+
+  button {
+    font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
+    font-size: 16px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    background: #8caaee;
+    color: #292c3c;
+    border: 2px solid #51576d;
+    border-radius: 6px;
+    padding: 9px 16px 6px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:hover:not(:disabled) { background: transparent; border-color: #8caaee; color: #8caaee; }
+  button:disabled { opacity: 0.35; cursor: default; }
+  button:focus-visible { outline: 2px solid #8caaee; outline-offset: 2px; }
+  button.secondary { background: transparent; color: #8caaee; }
+  button.secondary:hover:not(:disabled) { background: #8caaee; color: #292c3c; }
+  button.danger { background: #e78284; }
+  button.danger:hover:not(:disabled) { background: transparent; color: #e78284; border-color: #e78284; }
+  button.small { font-size: 13px; padding: 5px 10px 4px; }
+
+  input, select, textarea {
+    font-family: Verdana, "DejaVu Sans", Geneva, sans-serif;
+    background: #292c3c;
+    color: #c6d0f5;
+    border: 2px solid #51576d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 14px;
+    width: 100%;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid #8caaee; outline-offset: 1px; border-color: #8caaee; }
+  textarea { resize: vertical; min-height: 60px; }
+  input[type="checkbox"] { width: auto; padding: 0; }
+
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { font-size: 12px; color: #a5adce; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .row > * { flex: 1 1 90px; }
+
+  /* ---------- log tab ---------- */
+  .daybar { display: flex; align-items: center; gap: 8px; width: 100%; }
+  .daybar input[type="date"] { flex: 1 1 auto; }
+  .daybar button { padding: 8px 14px 6px; }
+
+  .weightcard { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .weightcard label { font-size: 14px; color: #a5adce; }
+  .weightcard input { width: 110px; }
+
+  .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
+  .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
+  .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
+  .macroBar { display: flex; width: 100%; height: 10px; border-radius: 999px; overflow: hidden; background: #414559; margin-bottom: 10px; }
+  .macroBar span { display: block; height: 100%; }
+  .macroLegend { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #c6d0f5; }
+  .macroLegend .dot, .itemMacros .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+
+  .mealsWrap { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+  .mealCard { padding: 12px 14px; }
+  .mealHead { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+  .mealHead h3 { font-size: 18px; }
+  .mealSub { font-size: 13px; color: #a5adce; }
+  .itemRow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid #414559;
+  }
+  .itemRow:first-of-type { border-top: none; }
+  .itemMain { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
+  .itemName { font-size: 14px; color: #c6d0f5; overflow-wrap: anywhere; }
+  .itemGrams { font-size: 11px; color: #a5adce; }
+  .itemMacros { display: flex; gap: 8px; font-size: 11px; color: #a5adce; flex-wrap: wrap; justify-content: flex-end; }
+  .itemDel {
+    background: transparent;
+    border: 2px solid #51576d;
+    color: #a5adce;
+    border-radius: 6px;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    line-height: 1;
+    font-size: 16px;
+    flex: 0 0 auto;
+  }
+  .itemDel:hover { background: #e78284; border-color: #e78284; color: #292c3c; }
+
+  .addcard { display: flex; flex-direction: column; gap: 12px; }
+  .addModeSwitch { display: flex; gap: 8px; }
+  .modeBtn { flex: 1; background: transparent; color: #a5adce; }
+  .modeBtn.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
+  .addForm { display: flex; flex-direction: column; gap: 8px; }
+  .addForm[hidden] { display: none; }
+
+  .aiPreviewWrap { position: relative; display: inline-block; }
+  #aiPreview { max-width: 160px; max-height: 160px; border-radius: 6px; border: 2px solid #51576d; display: block; }
+  #aiPreview[hidden] { display: none; }
+
+  .aiRow {
+    display: grid;
+    grid-template-columns: auto 1.4fr 0.7fr 0.7fr 0.7fr 0.7fr 0.7fr;
+    gap: 6px;
+    align-items: center;
+    padding: 6px 0;
+    border-top: 1px solid #414559;
+  }
+  .aiRow:first-of-type { border-top: none; }
+  .aiRow input[type="text"], .aiRow input[type="number"] { font-size: 12px; padding: 6px 6px; }
+
+  /* ---------- weight tab ---------- */
+  .rangeSwitch { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .rangeSwitch button { flex: 1 1 auto; background: transparent; color: #a5adce; font-size: 13px; padding: 6px 8px 4px; }
+  .rangeSwitch button.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
+  #weightChart { width: 100%; height: 240px; display: block; border-radius: 6px; }
+  .weightRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid #414559;
+  }
+  .weightRow:first-of-type { border-top: none; }
+  .wDate { flex: 1 1 auto; font-size: 13px; color: #c6d0f5; }
+  .wEdit { width: 90px; flex: 0 0 auto; }
+
+  /* ---------- settings tab ---------- */
+  .settingsWrap { display: flex; flex-direction: column; gap: 14px; }
+  .keyrow { display: flex; gap: 8px; }
+  .keyrow input { flex: 1 1 auto; }
+  .dataBtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+  /* ---------- tabs panels ---------- */
+  .tab-panel { display: none; width: 100%; flex-direction: column; gap: 14px; }
+  .tab-panel.active { display: flex; }
+
+  /* ---------- install prompt ---------- */
+  .install-pill {
+    position: fixed;
+    left: 50%;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+    transform: translate(-50%, 10px);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 14px;
+    background: rgba(65, 69, 89, 0.92);
+    border: 2px solid #51576d;
+    border-radius: 999px;
+    box-shadow: 0 6px 24px rgba(23, 26, 35, 0.5);
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    z-index: 10;
+  }
+  .install-pill[hidden] { display: none; }
+  .install-pill.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  .install-pill button {
+    font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+  .install-pill .install-accept {
+    color: #8caaee;
+    font-size: 16px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 5px 8px 2px;
+    white-space: nowrap;
+  }
+  .install-pill button:hover:not(:disabled) { background: transparent; color: #c6d0f5; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brandRow">
+      <img src="favicon.svg" alt="">
+      <h1>Fitny</h1>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-tab="log" type="button">Log</button>
+      <button class="tab" data-tab="weight" type="button">Weight</button>
+      <button class="tab" data-tab="settings" type="button">Settings</button>
+    </nav>
+  </header>
+
+  <!-- ===================== LOG ===================== -->
+  <section id="tab-log" class="tab-panel active">
+
+    <div class="daybar">
+      <button id="prevDay" type="button" aria-label="Previous day">‹</button>
+      <input type="date" id="dateInput">
+      <button id="nextDay" type="button" aria-label="Next day">›</button>
+      <button id="todayBtn" type="button" class="secondary">Today</button>
+    </div>
+
+    <div class="card weightcard">
+      <label for="weightInput">Body weight (kg)</label>
+      <input type="number" id="weightInput" step="0.1" inputmode="decimal" placeholder="—">
+    </div>
+
+    <div class="card" id="totalsCard"></div>
+
+    <div class="mealsWrap" id="mealsWrap"></div>
+
+    <div class="card addcard">
+      <h3>Add food</h3>
+      <div class="addModeSwitch">
+        <button class="modeBtn active" data-mode="manual" type="button">Add by hand</button>
+        <button class="modeBtn" data-mode="ai" type="button">Add with AI</button>
+      </div>
+
+      <div id="manualForm" class="addForm">
+        <div class="field">
+          <label for="manualMeal">Meal</label>
+          <select id="manualMeal">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snacks</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="manualName">Food name</label>
+          <input type="text" id="manualName" placeholder="e.g. Grilled chicken breast">
+        </div>
+        <div class="row">
+          <div class="field"><label for="manualGrams">Weight (g)</label><input type="number" id="manualGrams" inputmode="decimal" min="0"></div>
+          <div class="field"><label for="manualKcal">Kcal</label><input type="number" id="manualKcal" inputmode="decimal" min="0" placeholder="auto"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="manualProtein">Protein (g)</label><input type="number" id="manualProtein" inputmode="decimal" min="0"></div>
+          <div class="field"><label for="manualCarbs">Carbs (g)</label><input type="number" id="manualCarbs" inputmode="decimal" min="0"></div>
+          <div class="field"><label for="manualFat">Fat (g)</label><input type="number" id="manualFat" inputmode="decimal" min="0"></div>
+        </div>
+        <p class="hint">Leave kcal blank to auto-calculate it from protein/carbs/fat (4 / 4 / 9 kcal per gram).</p>
+        <button id="manualAdd" type="button">Add item</button>
+      </div>
+
+      <div id="aiForm" class="addForm" hidden>
+        <div class="field">
+          <label for="aiMeal">Meal</label>
+          <select id="aiMeal">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snacks</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="aiText">Describe it (optional if you add a photo)</label>
+          <textarea id="aiText" placeholder="e.g. A can of Coca-Cola and a slice of pepperoni pizza"></textarea>
+        </div>
+        <div class="field">
+          <label for="aiImageInput">Photo (optional)</label>
+          <input type="file" id="aiImageInput" accept="image/*" capture="environment">
+        </div>
+        <div class="aiPreviewWrap">
+          <img id="aiPreview" hidden alt="Selected food photo">
+        </div>
+        <button id="aiClearImage" type="button" class="secondary small" hidden>Remove photo</button>
+        <button id="aiAnalyze" type="button">Analyze with AI</button>
+        <p class="hint" id="aiStatus"></p>
+        <div id="aiResults" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== WEIGHT ===================== -->
+  <section id="tab-weight" class="tab-panel">
+    <div class="card">
+      <div class="rangeSwitch">
+        <button data-range="14" type="button">2w</button>
+        <button data-range="30" type="button" class="active">1m</button>
+        <button data-range="90" type="button">3m</button>
+        <button data-range="365" type="button">1y</button>
+        <button data-range="0" type="button">All</button>
+      </div>
+      <canvas id="weightChart" width="1200" height="480"></canvas>
+    </div>
+    <div class="card" id="weightListCard">
+      <h3 style="margin-bottom:8px;">History</h3>
+      <div id="weightList"></div>
+    </div>
+  </section>
+
+  <!-- ===================== SETTINGS ===================== -->
+  <section id="tab-settings" class="tab-panel">
+    <div class="settingsWrap">
+      <div class="card">
+        <h3 style="margin-bottom:8px;">OpenRouter</h3>
+        <div class="field">
+          <label for="apiKeyInput">API key</label>
+          <div class="keyrow">
+            <input type="password" id="apiKeyInput" placeholder="sk-or-v1-…" autocomplete="off">
+            <button id="toggleKeyVis" type="button" class="secondary small">Show</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="modelInput">Model</label>
+          <input type="text" id="modelInput" placeholder="openai/gpt-4o-mini">
+        </div>
+        <p class="hint">
+          No key ships with this app — get one at openrouter.ai/keys and paste it above.
+          It's saved only in this browser's local storage and sent directly from your device to
+          OpenRouter; it's never included in DB export/import. Pick any OpenRouter model slug that
+          supports image input for photo analysis.
+        </p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-bottom:8px;">Data</h3>
+        <p class="hint">Export your log as a JSON file, or import one on another device. The API key is never included.</p>
+        <div class="dataBtns">
+          <button id="exportBtn" type="button">Export DB</button>
+          <button id="importBtn" type="button" class="secondary">Import DB</button>
+          <button id="clearBtn" type="button" class="danger">Erase all data</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="install-pill" id="installPill" hidden>
+  <button class="install-accept" id="installAccept" type="button">Install</button>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   Storage
+   ============================================================ */
+
+const DB_KEY = "fitny_db_v1";
+const SETTINGS_KEY = "fitny_settings_v1";
+const DEFAULT_MODEL = "openai/gpt-4o-mini";
+const MEALS = ["breakfast", "lunch", "dinner", "snack"];
+const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
+
+function emptyMeals() {
+  return { breakfast: [], lunch: [], dinner: [], snack: [] };
+}
+
+function loadDB() {
+  try {
+    const raw = localStorage.getItem(DB_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed.days === "object" && parsed.days) return { days: parsed.days };
+  } catch {}
+  return { days: {} };
+}
+
+function saveDB() {
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { apiKey: parsed.apiKey || "", model: parsed.model || DEFAULT_MODEL };
+    }
+  } catch {}
+  return { apiKey: "", model: DEFAULT_MODEL };
+}
+
+function saveSettings() {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function getDay(dateStr) {
+  return db.days[dateStr] || null;
+}
+
+function ensureDay(dateStr) {
+  if (!db.days[dateStr]) db.days[dateStr] = { weight: null, meals: emptyMeals() };
+  const d = db.days[dateStr];
+  if (!d.meals) d.meals = emptyMeals();
+  for (const m of MEALS) if (!Array.isArray(d.meals[m])) d.meals[m] = [];
+  return d;
+}
+
+function num(v) {
+  return typeof v === "number" && isFinite(v) ? v : 0;
+}
+
+function numOrNull(v) {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function totalsFor(dateStr) {
+  const day = getDay(dateStr);
+  const t = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+  if (!day) return t;
+  for (const m of MEALS) {
+    for (const it of day.meals[m] || []) {
+      t.kcal += num(it.kcal);
+      t.protein += num(it.protein);
+      t.carbs += num(it.carbs);
+      t.fat += num(it.fat);
+    }
+  }
+  return t;
+}
+
+/* ============================================================
+   Dates
+   ============================================================ */
+
+function isoToDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function dateToIso(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function shiftDate(iso, days) {
+  const d = isoToDate(iso);
+  d.setDate(d.getDate() + days);
+  return dateToIso(d);
+}
+function todayIso() {
+  return dateToIso(new Date());
+}
+function defaultMeal() {
+  const h = new Date().getHours();
+  if (h < 11) return "breakfast";
+  if (h < 16) return "lunch";
+  if (h < 21) return "dinner";
+  return "snack";
+}
+
+/* ============================================================
+   State + DOM references
+   ============================================================ */
+
+const db = loadDB();
+const settings = loadSettings();
+let currentDate = todayIso();
+let currentRange = 30;
+let activeTab = "log";
+let aiImageDataUrl = null;
+let aiPending = [];
+
+const dateInput = document.getElementById("dateInput");
+const prevDayBtn = document.getElementById("prevDay");
+const nextDayBtn = document.getElementById("nextDay");
+const todayBtn = document.getElementById("todayBtn");
+const weightInput = document.getElementById("weightInput");
+const totalsEl = document.getElementById("totalsCard");
+const mealsWrap = document.getElementById("mealsWrap");
+
+const manualMeal = document.getElementById("manualMeal");
+const manualName = document.getElementById("manualName");
+const manualGrams = document.getElementById("manualGrams");
+const manualKcal = document.getElementById("manualKcal");
+const manualProtein = document.getElementById("manualProtein");
+const manualCarbs = document.getElementById("manualCarbs");
+const manualFat = document.getElementById("manualFat");
+const manualAddBtn = document.getElementById("manualAdd");
+
+const aiMealSelect = document.getElementById("aiMeal");
+const aiText = document.getElementById("aiText");
+const aiImageInput = document.getElementById("aiImageInput");
+const aiPreview = document.getElementById("aiPreview");
+const aiClearImageBtn = document.getElementById("aiClearImage");
+const aiAnalyzeBtn = document.getElementById("aiAnalyze");
+const aiStatus = document.getElementById("aiStatus");
+const aiResultsEl = document.getElementById("aiResults");
+
+const weightCanvas = document.getElementById("weightChart");
+const wctx = weightCanvas.getContext("2d");
+const weightListEl = document.getElementById("weightList");
+
+const apiKeyInput = document.getElementById("apiKeyInput");
+const toggleKeyVis = document.getElementById("toggleKeyVis");
+const modelInput = document.getElementById("modelInput");
+const exportBtn = document.getElementById("exportBtn");
+const importBtn = document.getElementById("importBtn");
+const importFile = document.getElementById("importFile");
+const clearBtn = document.getElementById("clearBtn");
+
+manualMeal.value = defaultMeal();
+aiMealSelect.value = defaultMeal();
+apiKeyInput.value = settings.apiKey;
+modelInput.value = settings.model;
+
+/* ============================================================
+   Rendering — Log tab
+   ============================================================ */
+
+function renderTotals() {
+  const t = totalsFor(currentDate);
+  const pCal = t.protein * 4, cCal = t.carbs * 4, fCal = t.fat * 9;
+  const calSum = pCal + cCal + fCal || 1;
+  totalsEl.innerHTML = `
+    <div class="totalsTop">
+      <span class="totalsKcal">${Math.round(t.kcal)}</span>
+      <span class="totalsKcalLabel">kcal</span>
+    </div>
+    <div class="macroBar">
+      <span style="width:${(pCal / calSum) * 100}%;background:#e78284"></span>
+      <span style="width:${(cCal / calSum) * 100}%;background:#e5c890"></span>
+      <span style="width:${(fCal / calSum) * 100}%;background:#a6d189"></span>
+    </div>
+    <div class="macroLegend">
+      <span><i class="dot" style="background:#e78284"></i>Protein ${t.protein.toFixed(0)} g</span>
+      <span><i class="dot" style="background:#e5c890"></i>Carbs ${t.carbs.toFixed(0)} g</span>
+      <span><i class="dot" style="background:#a6d189"></i>Fat ${t.fat.toFixed(0)} g</span>
+    </div>
+  `;
+}
+
+function itemRowHtml(meal, it) {
+  return `
+    <div class="itemRow">
+      <div class="itemMain">
+        <span class="itemName">${esc(it.name)}</span>
+        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+      </div>
+      <div class="itemMacros">
+        <span>${Math.round(num(it.kcal))} kcal</span>
+        <span><i class="dot" style="background:#e78284"></i>${num(it.protein).toFixed(0)}</span>
+        <span><i class="dot" style="background:#e5c890"></i>${num(it.carbs).toFixed(0)}</span>
+        <span><i class="dot" style="background:#a6d189"></i>${num(it.fat).toFixed(0)}</span>
+      </div>
+      <button type="button" class="itemDel" data-meal="${meal}" data-id="${it.id}" aria-label="Delete item">×</button>
+    </div>
+  `;
+}
+
+function renderMeals() {
+  const day = getDay(currentDate);
+  mealsWrap.innerHTML = MEALS.map((meal) => {
+    const items = day ? day.meals[meal] || [] : [];
+    const sub = items.reduce((a, it) => a + num(it.kcal), 0);
+    const rows = items.length
+      ? items.map((it) => itemRowHtml(meal, it)).join("")
+      : `<p class="hint">Nothing logged yet.</p>`;
+    return `
+      <div class="card mealCard">
+        <div class="mealHead">
+          <h3>${MEAL_LABELS[meal]}</h3>
+          <span class="mealSub">${Math.round(sub)} kcal</span>
+        </div>
+        ${rows}
+      </div>
+    `;
+  }).join("");
+}
+
+function render() {
+  dateInput.value = currentDate;
+  const day = getDay(currentDate);
+  weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
+  renderTotals();
+  renderMeals();
+  if (activeTab === "weight") {
+    drawWeightChart();
+    renderWeightList();
+  }
+}
+
+/* ---------- date navigation ---------- */
+
+prevDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, -1); render(); });
+nextDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate, 1); render(); });
+todayBtn.addEventListener("click", () => { currentDate = todayIso(); render(); });
+dateInput.addEventListener("change", () => {
+  if (dateInput.value) { currentDate = dateInput.value; render(); }
+});
+
+/* ---------- weight input ---------- */
+
+weightInput.addEventListener("change", () => {
+  const v = numOrNull(weightInput.value);
+  ensureDay(currentDate).weight = v;
+  saveDB();
+  render();
+});
+
+/* ---------- delete a logged item ---------- */
+
+mealsWrap.addEventListener("click", (e) => {
+  const btn = e.target.closest(".itemDel");
+  if (!btn) return;
+  const { meal, id } = btn.dataset;
+  const day = getDay(currentDate);
+  if (!day) return;
+  day.meals[meal] = (day.meals[meal] || []).filter((it) => it.id !== id);
+  saveDB();
+  render();
+});
+
+/* ---------- add-mode switch ---------- */
+
+const manualForm = document.getElementById("manualForm");
+const aiForm = document.getElementById("aiForm");
+document.querySelectorAll(".modeBtn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
+    const mode = btn.dataset.mode;
+    manualForm.hidden = mode !== "manual";
+    aiForm.hidden = mode !== "ai";
+  });
+});
+
+/* ---------- manual add ---------- */
+
+manualAddBtn.addEventListener("click", () => {
+  const name = manualName.value.trim();
+  if (!name) { manualName.focus(); return; }
+  const grams = numOrNull(manualGrams.value);
+  const protein = numOrNull(manualProtein.value) ?? 0;
+  const carbs = numOrNull(manualCarbs.value) ?? 0;
+  const fat = numOrNull(manualFat.value) ?? 0;
+  const kcal = manualKcal.value !== "" ? (numOrNull(manualKcal.value) ?? 0) : Math.round(protein * 4 + carbs * 4 + fat * 9);
+  const meal = manualMeal.value;
+  const day = ensureDay(currentDate);
+  day.meals[meal].push({ id: uid(), name, grams, kcal, protein, carbs, fat });
+  saveDB();
+  manualName.value = "";
+  manualGrams.value = "";
+  manualKcal.value = "";
+  manualProtein.value = "";
+  manualCarbs.value = "";
+  manualFat.value = "";
+  manualName.focus();
+  render();
+});
+
+/* ============================================================
+   AI add — OpenRouter
+   ============================================================ */
+
+const AI_SYSTEM_PROMPT = `You are a meticulous nutrition-estimation assistant embedded in a food diary app.
+Given a short text description and/or a photo of food, identify every distinct food or drink item present.
+For branded or packaged products, use the openrouter:web_search tool to find the manufacturer's real nutrition
+facts (matching the visible size/flavor/variant) instead of guessing. For homemade or generic food, estimate
+calories and macros using standard nutrition references, scaled to a sensible serving size.
+Reply with ONLY one JSON object and nothing else — no markdown fences, no commentary — matching exactly this shape:
+{"items":[{"name":string,"grams":number,"kcal":number,"protein_g":number,"carbs_g":number,"fat_g":number}]}
+All numeric values describe the entire detected portion (not per 100 g). Always fill in every field with your
+best numeric estimate; never omit a field or use null.`;
+
+aiImageInput.addEventListener("change", () => {
+  const file = aiImageInput.files[0];
+  if (!file) { clearAiImage(); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    aiImageDataUrl = reader.result;
+    aiPreview.src = aiImageDataUrl;
+    aiPreview.hidden = false;
+    aiClearImageBtn.hidden = false;
+  };
+  reader.readAsDataURL(file);
+});
+
+function clearAiImage() {
+  aiImageDataUrl = null;
+  aiImageInput.value = "";
+  aiPreview.hidden = true;
+  aiPreview.src = "";
+  aiClearImageBtn.hidden = true;
+}
+aiClearImageBtn.addEventListener("click", clearAiImage);
+
+async function callOpenRouter(basePayload) {
+  const attempt = (payload) =>
+    fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + settings.apiKey,
+        "Content-Type": "application/json",
+        "HTTP-Referer": location.href,
+        "X-Title": "Fitny",
+      },
+      body: JSON.stringify(payload),
+    });
+
+  let res = await attempt({ ...basePayload, response_format: { type: "json_object" } });
+  if (!res.ok) {
+    // Some providers reject response_format outright — retry once without it.
+    res = await attempt(basePayload);
+  }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const j = await res.json();
+      msg = j.error?.message || msg;
+    } catch {}
+    throw new Error(`OpenRouter ${res.status}: ${msg}`);
+  }
+  return res.json();
+}
+
+function parseItemsFromText(raw) {
+  let jsonText = String(raw || "").trim();
+  const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) jsonText = fence[1].trim();
+  let obj;
+  try {
+    obj = JSON.parse(jsonText);
+  } catch {
+    const start = jsonText.indexOf("{");
+    const end = jsonText.lastIndexOf("}");
+    if (start === -1 || end === -1) throw new Error("The model didn't return JSON.");
+    obj = JSON.parse(jsonText.slice(start, end + 1));
+  }
+  const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj) ? obj : [];
+  if (!items.length) throw new Error("No items found in the response.");
+  return items.map((it) => ({
+    name: String(it.name ?? "Item").slice(0, 80),
+    grams: numOrNull(it.grams),
+    kcal: numOrNull(it.kcal) ?? 0,
+    protein: numOrNull(it.protein_g ?? it.protein) ?? 0,
+    carbs: numOrNull(it.carbs_g ?? it.carbs) ?? 0,
+    fat: numOrNull(it.fat_g ?? it.fat) ?? 0,
+    checked: true,
+  }));
+}
+
+async function analyzeWithAI(text, imageDataUrl) {
+  if (!settings.apiKey) throw new Error("Add your OpenRouter API key in Settings first.");
+  const content = [
+    { type: "text", text: text?.trim() ? text.trim() : "Identify this food and estimate its nutrition facts." },
+  ];
+  if (imageDataUrl) content.push({ type: "image_url", image_url: { url: imageDataUrl } });
+
+  const basePayload = {
+    model: settings.model || DEFAULT_MODEL,
+    messages: [
+      { role: "system", content: AI_SYSTEM_PROMPT },
+      { role: "user", content },
+    ],
+    tools: [{ type: "openrouter:web_search" }],
+  };
+
+  const data = await callOpenRouter(basePayload);
+  const raw = data?.choices?.[0]?.message?.content ?? "";
+  return parseItemsFromText(raw);
+}
+
+aiAnalyzeBtn.addEventListener("click", async () => {
+  aiStatus.textContent = "";
+  if (!settings.apiKey) {
+    aiStatus.textContent = "Add your OpenRouter API key in Settings first.";
+    return;
+  }
+  if (!aiText.value.trim() && !aiImageDataUrl) {
+    aiStatus.textContent = "Add a description or a photo first.";
+    return;
+  }
+  aiAnalyzeBtn.disabled = true;
+  aiStatus.textContent = "Analyzing…";
+  try {
+    const items = await analyzeWithAI(aiText.value, aiImageDataUrl);
+    aiPending = items;
+    renderAiResults();
+    aiStatus.textContent = `Found ${items.length} item(s) — review and add.`;
+  } catch (err) {
+    aiPending = [];
+    renderAiResults();
+    aiStatus.textContent = "Error: " + err.message;
+  } finally {
+    aiAnalyzeBtn.disabled = false;
+  }
+});
+
+function aiRowHtml(it, i) {
+  return `
+    <div class="aiRow">
+      <input type="checkbox" class="aiCheck" data-i="${i}" ${it.checked ? "checked" : ""}>
+      <input type="text" class="aiName" data-i="${i}" value="${esc(it.name)}" placeholder="name">
+      <input type="number" class="aiGrams" data-i="${i}" value="${it.grams ?? ""}" placeholder="g">
+      <input type="number" class="aiKcal" data-i="${i}" value="${it.kcal ?? ""}" placeholder="kcal">
+      <input type="number" class="aiProtein" data-i="${i}" value="${it.protein ?? ""}" placeholder="P g">
+      <input type="number" class="aiCarbs" data-i="${i}" value="${it.carbs ?? ""}" placeholder="C g">
+      <input type="number" class="aiFat" data-i="${i}" value="${it.fat ?? ""}" placeholder="F g">
+    </div>
+  `;
+}
+
+function renderAiResults() {
+  if (!aiPending.length) {
+    aiResultsEl.hidden = true;
+    aiResultsEl.innerHTML = "";
+    return;
+  }
+  aiResultsEl.hidden = false;
+  aiResultsEl.innerHTML = aiPending.map(aiRowHtml).join("") + `<button id="aiAddChecked" type="button">Add checked to meal</button>`;
+}
+
+aiResultsEl.addEventListener("input", (e) => {
+  const i = e.target.dataset.i;
+  if (i === undefined) return;
+  const it = aiPending[i];
+  if (!it) return;
+  if (e.target.classList.contains("aiName")) it.name = e.target.value;
+  else if (e.target.classList.contains("aiGrams")) it.grams = numOrNull(e.target.value);
+  else if (e.target.classList.contains("aiKcal")) it.kcal = numOrNull(e.target.value) ?? 0;
+  else if (e.target.classList.contains("aiProtein")) it.protein = numOrNull(e.target.value) ?? 0;
+  else if (e.target.classList.contains("aiCarbs")) it.carbs = numOrNull(e.target.value) ?? 0;
+  else if (e.target.classList.contains("aiFat")) it.fat = numOrNull(e.target.value) ?? 0;
+});
+
+aiResultsEl.addEventListener("change", (e) => {
+  if (e.target.classList.contains("aiCheck")) {
+    const it = aiPending[e.target.dataset.i];
+    if (it) it.checked = e.target.checked;
+  }
+});
+
+aiResultsEl.addEventListener("click", (e) => {
+  if (e.target.id !== "aiAddChecked") return;
+  const meal = aiMealSelect.value;
+  const day = ensureDay(currentDate);
+  let count = 0;
+  for (const it of aiPending) {
+    if (!it.checked) continue;
+    day.meals[meal].push({
+      id: uid(),
+      name: it.name || "Item",
+      grams: it.grams,
+      kcal: num(it.kcal),
+      protein: num(it.protein),
+      carbs: num(it.carbs),
+      fat: num(it.fat),
+    });
+    count++;
+  }
+  saveDB();
+  aiPending = [];
+  renderAiResults();
+  aiText.value = "";
+  clearAiImage();
+  aiStatus.textContent = count ? `Added ${count} item(s) to ${MEAL_LABELS[meal]}.` : "Nothing checked.";
+  render();
+});
+
+/* ============================================================
+   Weight tab
+   ============================================================ */
+
+function weightEntries() {
+  return Object.keys(db.days)
+    .filter((d) => typeof db.days[d].weight === "number")
+    .sort()
+    .map((d) => ({ date: d, weight: db.days[d].weight }));
+}
+
+function resizeCanvasForDPR(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.round((rect.width || canvas.clientWidth || 300) * dpr));
+  const h = Math.max(1, Math.round((rect.height || canvas.clientHeight || 240) * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+  return dpr;
+}
+
+function drawWeightChart() {
+  const dpr = resizeCanvasForDPR(weightCanvas);
+  const w = weightCanvas.width, h = weightCanvas.height;
+  wctx.clearRect(0, 0, w, h);
+  wctx.fillStyle = "#303446";
+  wctx.fillRect(0, 0, w, h);
+
+  let entries = weightEntries();
+  if (currentRange > 0) {
+    const cutoff = shiftDate(todayIso(), -currentRange);
+    entries = entries.filter((e) => e.date >= cutoff);
+  }
+
+  if (!entries.length) {
+    wctx.fillStyle = "#a5adce";
+    wctx.font = `${14 * dpr}px Verdana, sans-serif`;
+    wctx.textAlign = "center";
+    wctx.textBaseline = "middle";
+    wctx.fillText("No weight logged in this range", w / 2, h / 2);
+    return;
+  }
+
+  const padL = 52 * dpr, padR = 16 * dpr, padT = 34 * dpr, padB = 26 * dpr;
+  const values = entries.map((e) => e.weight);
+  let min = Math.min(...values), max = Math.max(...values);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.15 || 1;
+  min -= pad;
+  max += pad;
+
+  const t0 = isoToDate(entries[0].date).getTime();
+  const t1 = isoToDate(entries[entries.length - 1].date).getTime();
+  const tSpan = Math.max(1, t1 - t0);
+
+  const x = (iso) => padL + ((isoToDate(iso).getTime() - t0) / tSpan) * (w - padL - padR);
+  const y = (v) => h - padB - ((v - min) / (max - min)) * (h - padT - padB);
+
+  wctx.strokeStyle = "#414559";
+  wctx.lineWidth = 1 * dpr;
+  wctx.fillStyle = "#a5adce";
+  wctx.font = `${12 * dpr}px Verdana, sans-serif`;
+  wctx.textAlign = "right";
+  wctx.textBaseline = "middle";
+  [min + pad, (min + max) / 2, max - pad].forEach((v) => {
+    const yy = y(v);
+    wctx.beginPath();
+    wctx.moveTo(padL, yy);
+    wctx.lineTo(w - padR, yy);
+    wctx.stroke();
+    wctx.fillText(v.toFixed(1), padL - 8 * dpr, yy);
+  });
+
+  if (entries.length > 1) {
+    wctx.beginPath();
+    entries.forEach((e, i) => {
+      const px = x(e.date), py = y(e.weight);
+      if (i === 0) wctx.moveTo(px, py);
+      else wctx.lineTo(px, py);
+    });
+    wctx.strokeStyle = "#8caaee";
+    wctx.lineWidth = 2.5 * dpr;
+    wctx.lineJoin = "round";
+    wctx.lineCap = "round";
+    wctx.stroke();
+  }
+
+  entries.forEach((e) => {
+    wctx.beginPath();
+    wctx.arc(x(e.date), y(e.weight), 3.5 * dpr, 0, Math.PI * 2);
+    wctx.fillStyle = "#8caaee";
+    wctx.fill();
+    wctx.lineWidth = 1.5 * dpr;
+    wctx.strokeStyle = "#232634";
+    wctx.stroke();
+  });
+
+  const last = entries[entries.length - 1];
+  wctx.fillStyle = "#c6d0f5";
+  wctx.font = `${22 * dpr}px "Bebas Neue", Impact, sans-serif`;
+  wctx.textAlign = "left";
+  wctx.textBaseline = "top";
+  wctx.fillText(`${last.weight.toFixed(1)} kg`, padL, 4 * dpr);
+}
+
+function renderWeightList() {
+  const entries = weightEntries().slice().reverse();
+  weightListEl.innerHTML = entries.length
+    ? entries.map((e) => `
+        <div class="weightRow">
+          <span class="wDate">${e.date}</span>
+          <input type="number" step="0.1" value="${e.weight}" data-date="${e.date}" class="wEdit">
+          <button data-date="${e.date}" class="wDel secondary small" type="button">Delete</button>
+        </div>
+      `).join("")
+    : `<p class="hint">No entries yet — set your weight from the Log tab.</p>`;
+}
+
+weightListEl.addEventListener("change", (e) => {
+  if (!e.target.classList.contains("wEdit")) return;
+  const date = e.target.dataset.date;
+  ensureDay(date).weight = numOrNull(e.target.value);
+  saveDB();
+  if (date === currentDate) weightInput.value = numOrNull(e.target.value) ?? "";
+  drawWeightChart();
+  renderWeightList();
+});
+
+weightListEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".wDel");
+  if (!btn) return;
+  const date = btn.dataset.date;
+  if (db.days[date]) db.days[date].weight = null;
+  saveDB();
+  if (date === currentDate) weightInput.value = "";
+  drawWeightChart();
+  renderWeightList();
+});
+
+document.querySelectorAll(".rangeSwitch button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    currentRange = Number(btn.dataset.range);
+    document.querySelectorAll(".rangeSwitch button").forEach((b) => b.classList.toggle("active", b === btn));
+    drawWeightChart();
+  });
+});
+
+new ResizeObserver(() => { if (activeTab === "weight") drawWeightChart(); }).observe(weightCanvas);
+if (document.fonts) {
+  document.fonts.load('22px "Bebas Neue"').then(() => { if (activeTab === "weight") drawWeightChart(); }).catch(() => {});
+}
+
+/* ============================================================
+   Tabs
+   ============================================================ */
+
+const tabButtons = document.querySelectorAll(".tab");
+const tabPanels = document.querySelectorAll(".tab-panel");
+tabButtons.forEach((btn) => {
+  btn.addEventListener("click", () => {
+    activeTab = btn.dataset.tab;
+    tabButtons.forEach((b) => b.classList.toggle("active", b === btn));
+    tabPanels.forEach((p) => p.classList.toggle("active", p.id === "tab-" + activeTab));
+    if (activeTab === "weight") {
+      drawWeightChart();
+      renderWeightList();
+    }
+  });
+});
+
+/* ============================================================
+   Settings
+   ============================================================ */
+
+apiKeyInput.addEventListener("input", () => {
+  settings.apiKey = apiKeyInput.value.trim();
+  saveSettings();
+});
+modelInput.addEventListener("input", () => {
+  settings.model = modelInput.value.trim() || DEFAULT_MODEL;
+  saveSettings();
+});
+toggleKeyVis.addEventListener("click", () => {
+  const show = apiKeyInput.type === "password";
+  apiKeyInput.type = show ? "text" : "password";
+  toggleKeyVis.textContent = show ? "Hide" : "Show";
+});
+
+exportBtn.addEventListener("click", () => {
+  const payload = { version: 1, exportedAt: new Date().toISOString(), days: db.days };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  a.href = url;
+  a.download = `fitny_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+});
+
+importBtn.addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", () => {
+  const file = importFile.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (!parsed || typeof parsed.days !== "object" || !parsed.days) throw new Error("Not a fitny export file.");
+      if (!confirm("Import will replace all current log data. Continue?")) return;
+      db.days = parsed.days;
+      saveDB();
+      currentDate = todayIso();
+      render();
+      alert("Import complete.");
+    } catch (err) {
+      alert("Import failed: " + err.message);
+    } finally {
+      importFile.value = "";
+    }
+  };
+  reader.readAsText(file);
+});
+
+clearBtn.addEventListener("click", () => {
+  if (!confirm("Erase ALL logged data? This cannot be undone.")) return;
+  db.days = {};
+  saveDB();
+  render();
+});
+
+/* ============================================================
+   Boot
+   ============================================================ */
+
+render();
+
+/* ---------- install prompt ---------- */
+
+/* A quiet pill at the bottom edge: shows whenever the app is installable
+   and not installed, and keeps showing — only an actual install hides it. */
+
+const pill = document.getElementById("installPill");
+const installBtn = document.getElementById("installAccept");
+let deferredPrompt = null;
+let pillTimer = 0;
+let pillDismissed = false;
+
+function isInstalled() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+function showPill() {
+  if (isInstalled() || pillDismissed) return;
+  clearTimeout(pillTimer);
+  pill.hidden = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => pill.classList.add("show")));
+}
+
+function hidePill() {
+  clearTimeout(pillTimer);
+  pill.classList.remove("show");
+  pillTimer = setTimeout(() => { pill.hidden = true; }, 400);
+}
+
+function showPillSoon() {
+  clearTimeout(pillTimer);
+  pillTimer = setTimeout(showPill, 1200);
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.textContent = "Install";
+  showPillSoon();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredPrompt = null;
+  pillDismissed = true;
+  hidePill();
+});
+
+window.matchMedia("(display-mode: standalone)").addEventListener("change", (e) => {
+  if (e.matches) {
+    pillDismissed = true;
+    hidePill();
+  }
+});
+
+installBtn.addEventListener("click", async () => {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    if (outcome === "accepted") {
+      pillDismissed = true;
+      hidePill();
+    }
+  } else {
+    installBtn.textContent = "Share → Add to Home Screen";
+  }
+});
+
+const isIOS =
+  /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+if (isIOS && !("onbeforeinstallprompt" in window)) {
+  installBtn.textContent = "Add to Home Screen";
+  showPillSoon();
+}
+
+/* ---------- pwa ---------- */
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+
+</body>
+</html>
