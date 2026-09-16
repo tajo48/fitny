@@ -610,7 +610,6 @@
           <div class="field">
             <label for="profileGender">Gender</label>
             <select id="profileGender">
-              <option value="">Not set</option>
               <option value="male">Male</option>
               <option value="female">Female</option>
             </select>
@@ -735,13 +734,24 @@ const KCAL_PER_KG = 7700;
 /* The rate-based math above works in kg/week, but intake and TDEE are
    daily — so the kg↔kcal conversion needs the same unit: 7700 ÷ 7. */
 const KCAL_PER_KG_PER_DAY = KCAL_PER_KG / 7;
+/* Macro split per goal (fractions of kcal) for Automatic mode. Each goal
+   gets its own proportions: lose/recomp skew high-protein to protect
+   muscle, maintain is a classic 30/40/30, gain skews toward carbs for
+   training fuel. Protein also gets a floor of 1.6 g per kg of body weight. */
+const AUTO_MACRO_SPLIT = {
+  lose:     { protein: 0.35, carbs: 0.30, fat: 0.35 },
+  maintain: { protein: 0.30, carbs: 0.40, fat: 0.30 },
+  recomp:   { protein: 0.35, carbs: 0.35, fat: 0.30 },
+  gain:     { protein: 0.25, carbs: 0.50, fat: 0.25 },
+};
+const AUTO_PROTEIN_PER_KG = 1.6;
 
 function normalizeGoalType(v) {
   return GOAL_TYPES.includes(v) ? v : "maintain";
 }
 
 function normalizeGender(v) {
-  return v === "male" || v === "female" ? v : "";
+  return v === "female" ? "female" : "male";
 }
 
 /* Mifflin-St Jeor resting-metabolism estimate — the standard, widely-used
@@ -814,7 +824,7 @@ function loadSettings() {
       return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -1295,6 +1305,7 @@ let historyItemsCache = [];
    today. */
 let currentMeal = defaultMeal();
 let mealManuallySet = false;
+let lastKnownToday = todayIso();
 
 function syncMealSelects() {
   manualMeal.value = currentMeal;
@@ -1303,7 +1314,18 @@ function syncMealSelects() {
 }
 
 function refreshMealByTime() {
-  if (currentDate !== todayIso() || mealManuallySet) return;
+  const today = todayIso();
+  // A new day started while the app sat open (or resumed from background):
+  // if the view was parked on the previous "today", roll it forward so the
+  // app is always sitting on today when it wakes up.
+  if (today !== lastKnownToday) {
+    if (currentDate === lastKnownToday) {
+      currentDate = today;
+      render();
+    }
+    lastKnownToday = today;
+  }
+  if (currentDate !== today || mealManuallySet) return;
   const meal = defaultMeal();
   if (meal !== currentMeal) {
     currentMeal = meal;
@@ -2173,7 +2195,34 @@ function staticGoalEstimate() {
     height: settings.height,
   });
   if (!defaults) return null;
-  return { ...defaults, weight: entries.length ? targetWeightFrom(w, settings.goalType) : null };
+  return { ...defaults, weightKg: w, weight: entries.length ? targetWeightFrom(w, settings.goalType) : null };
+}
+
+function latestWeightKg() {
+  const entries = weightEntries();
+  return entries.length ? entries[entries.length - 1].weight : null;
+}
+
+/* Sets protein/carbs/fat goals for a new kcal goal using the goal's own
+   macro split, with a protein floor of 1.6 g/kg so muscle is protected on
+   a cut and supported on a bulk. Carbs and fat share the remaining
+   calories in the split's own carb:fat ratio. */
+function applyAutoMacros(kcal, weightKg) {
+  const g = settings.goals;
+  const split = AUTO_MACRO_SPLIT[normalizeGoalType(settings.goalType)] || AUTO_MACRO_SPLIT.maintain;
+  let protein = Math.round((kcal * split.protein) / 4);
+  const w = Number(weightKg);
+  if (Number.isFinite(w) && w > 0) protein = Math.max(protein, Math.round(w * AUTO_PROTEIN_PER_KG));
+  const remaining = Math.max(0, kcal - protein * 4);
+  const carbKcalShare = (split.carbs * 4) / (split.carbs * 4 + split.fat * 9);
+  const carbs = Math.round((remaining * carbKcalShare) / 4);
+  const fat = Math.round((remaining * (1 - carbKcalShare)) / 9);
+  g.protein = protein;
+  g.carbs = carbs;
+  g.fat = fat;
+  goalProtein.value = protein;
+  goalCarbs.value = carbs;
+  goalFat.value = fat;
 }
 
 /* Runs after every data change (and at boot). Does nothing unless Automatic
@@ -2190,11 +2239,11 @@ function maybeAutoAdjust() {
   const res = computeAutoAdjustment();
   if (!res.error) {
     settings.goals.kcal = res.kcal;
-    recalcMacrosFromKcal();
+    applyAutoMacros(res.kcal, latestWeightKg());
     goalKcal.value = res.kcal;
     settings.autoAdjustLast = todayIso();
     settings.autoAdjustNote =
-      `Adjusted kcal goal to ${res.kcal} — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
+      `Adjusted to ${res.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
     saveSettings();
     renderTotals();
     autoAdjustStatus.textContent = settings.autoAdjustNote;
@@ -2206,14 +2255,12 @@ function maybeAutoAdjust() {
     return;
   }
   settings.goals.kcal = fallback.kcal;
-  settings.goals.protein = fallback.protein;
-  settings.goals.carbs = fallback.carbs;
-  settings.goals.fat = fallback.fat;
+  applyAutoMacros(fallback.kcal, fallback.weightKg);
   if (fallback.weight != null) settings.goals.weight = fallback.weight;
   syncGoalInputs();
   settings.autoAdjustLast = todayIso();
   settings.autoAdjustNote =
-    `Static estimate: kcal ${fallback.kcal} from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
+    `Static estimate: ${fallback.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
   saveSettings();
   renderTotals();
   autoAdjustStatus.textContent = settings.autoAdjustNote;
@@ -2336,7 +2383,7 @@ clearBtn.addEventListener("click", () => {
     model: DEFAULT_MODEL,
     goalType: "maintain",
     age: null,
-    gender: "",
+    gender: "male",
     height: null,
     defaultModelSeen: DEFAULT_MODEL,
     autoAdjust: false,
@@ -2355,7 +2402,7 @@ clearBtn.addEventListener("click", () => {
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   profileAge.value = "";
   profileHeight.value = "";
-  profileGender.value = "";
+  profileGender.value = "male";
   syncGoalInputs();
   syncAiAnalyzeButton();
   setAddMode("manual");
