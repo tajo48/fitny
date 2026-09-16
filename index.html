@@ -632,6 +632,18 @@
       </div>
 
       <div class="card">
+        <h3 style="margin-bottom:8px;">Date</h3>
+        <div class="field">
+          <label for="todayDateInput">Today's date</label>
+          <div class="row" style="flex-wrap:nowrap;">
+            <input type="date" id="todayDateInput">
+            <button id="resetTodayBtn" type="button" class="secondary small">Use device date</button>
+          </div>
+        </div>
+        <p class="hint">Fitny uses this as "today" for the Today button, chart ranges, and Automatic adjustment. Clear it or press "Use device date" to follow your device's clock.</p>
+      </div>
+
+      <div class="card">
         <h3 style="margin-bottom:8px;">Data</h3>
         <p class="hint">Export everything — log, weight, settings, API key and goals — as a JSON file, or import one on another device. Keep exported files private since they contain your API key.</p>
         <div class="dataBtns">
@@ -788,10 +800,10 @@ function loadSettings() {
       const age = numOrNull(parsed.age);
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, todayDate: isIsoDate(parsed.todayDate) ? parsed.todayDate : null, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, todayDate: null, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -896,13 +908,21 @@ function dateToIso(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+/* Strict ISO-date check used for the user-overridable "today" so a bogus
+   stored value can never turn into a shifted Date. */
+function isIsoDate(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
 function shiftDate(iso, days) {
   const d = isoToDate(iso);
   d.setDate(d.getDate() + days);
   return dateToIso(d);
 }
 function todayIso() {
-  return dateToIso(new Date());
+  return settings.todayDate || dateToIso(new Date());
 }
 function defaultMeal() {
   const h = new Date().getHours();
@@ -977,6 +997,8 @@ const goalWeight = document.getElementById("goalWeight");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
 const autoAdjustToggle = document.getElementById("autoAdjustToggle");
 const autoAdjustStatus = document.getElementById("autoAdjustStatus");
+const todayDateInput = document.getElementById("todayDateInput");
+const resetTodayBtn = document.getElementById("resetTodayBtn");
 const weightGoalHint = document.getElementById("weightGoalHint");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
@@ -998,6 +1020,7 @@ apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
 goalTypeSelect.value = settings.goalType;
 autoAdjustToggle.checked = settings.autoAdjust;
+todayDateInput.value = todayIso();
 syncGoalInputs();
 syncAiAnalyzeButton();
 maybeAutoAdjust();
@@ -2127,9 +2150,29 @@ function computeAutoAdjustment() {
   };
 }
 
+/* Static fallback for Automatic mode when there isn't enough logged data
+   for a personalized TDEE estimate yet: same formula the old Autofill
+   button used — latest logged weight (or the goal weight), goal type, and
+   profile → kcal/protein/carbs/fat plus a target weight. */
+function staticGoalEstimate() {
+  const entries = weightEntries();
+  const w = entries.length ? entries[entries.length - 1].weight : (settings.goals.weight ?? numOrNull(weightInput.value));
+  const defaults = computeDefaultGoals({
+    weightKg: w,
+    goalType: settings.goalType,
+    age: settings.age,
+    gender: settings.gender,
+    height: settings.height,
+  });
+  if (!defaults) return null;
+  return { ...defaults, weight: entries.length ? targetWeightFrom(w, settings.goalType) : null };
+}
+
 /* Runs after every data change (and at boot). Does nothing unless Automatic
    is on, and recalculates at most once per day so daily weight noise can't
-   make the goal bounce around. */
+   make the goal bounce around. With enough data it uses the real TDEE
+   estimate; without it, it falls back to a static estimate so the goal is
+   never left blank. */
 function maybeAutoAdjust() {
   if (!settings.autoAdjust) return;
   if (settings.autoAdjustLast === todayIso()) {
@@ -2137,16 +2180,32 @@ function maybeAutoAdjust() {
     return;
   }
   const res = computeAutoAdjustment();
-  if (res.error) {
-    autoAdjustStatus.textContent = `Automatic is on, but not adjusting yet — ${res.error}`;
+  if (!res.error) {
+    settings.goals.kcal = res.kcal;
+    recalcMacrosFromKcal();
+    goalKcal.value = res.kcal;
+    settings.autoAdjustLast = todayIso();
+    settings.autoAdjustNote =
+      `Adjusted kcal goal to ${res.kcal} — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
+    saveSettings();
+    renderTotals();
+    autoAdjustStatus.textContent = settings.autoAdjustNote;
     return;
   }
-  settings.goals.kcal = res.kcal;
-  recalcMacrosFromKcal();
-  goalKcal.value = res.kcal;
+  const fallback = staticGoalEstimate();
+  if (!fallback) {
+    autoAdjustStatus.textContent = "Automatic is on, but can't estimate anything yet — log a body weight (Log tab) or set a goal weight above.";
+    return;
+  }
+  settings.goals.kcal = fallback.kcal;
+  settings.goals.protein = fallback.protein;
+  settings.goals.carbs = fallback.carbs;
+  settings.goals.fat = fallback.fat;
+  if (fallback.weight != null) settings.goals.weight = fallback.weight;
+  syncGoalInputs();
   settings.autoAdjustLast = todayIso();
   settings.autoAdjustNote =
-    `Adjusted kcal goal to ${res.kcal} — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
+    `Static estimate: kcal ${fallback.kcal} from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
   saveSettings();
   renderTotals();
   autoAdjustStatus.textContent = settings.autoAdjustNote;
@@ -2162,6 +2221,37 @@ autoAdjustToggle.addEventListener("change", () => {
     autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   }
 });
+
+/* ---------- today's date override ---------- */
+
+function refreshTodayView() {
+  todayDateInput.value = todayIso();
+  render();
+  if (activeTab === "history") {
+    drawAllCharts();
+    renderWeightList();
+  }
+}
+
+function applyTodayDateChange(v) {
+  if (v && !isIsoDate(v)) {
+    refreshTodayView();
+    return;
+  }
+  const wasOnToday = currentDate === todayIso();
+  settings.todayDate = v || null;
+  saveSettings();
+  if (wasOnToday) currentDate = todayIso();
+  applyDefaultMealSelects();
+  refreshTodayView();
+  if (settings.autoAdjust) {
+    settings.autoAdjustLast = null;
+    maybeAutoAdjust();
+  }
+}
+
+todayDateInput.addEventListener("change", () => applyTodayDateChange(todayDateInput.value));
+resetTodayBtn.addEventListener("click", () => applyTodayDateChange(null));
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
   apiKeyInput.type = show ? "text" : "password";
@@ -2209,6 +2299,7 @@ importFile.addEventListener("change", () => {
         settings.autoAdjust = parsed.settings.autoAdjust === true;
         settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" ? parsed.settings.autoAdjustLast : null;
         settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
+        settings.todayDate = isIsoDate(parsed.settings.todayDate) ? parsed.settings.todayDate : null;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -2217,6 +2308,7 @@ importFile.addEventListener("change", () => {
         syncAiAnalyzeButton();
         setAddMode(settings.apiKey ? "ai" : "manual");
         autoAdjustToggle.checked = settings.autoAdjust;
+        todayDateInput.value = todayIso();
       }
       db.days = parsed.days;
       saveDB();
@@ -2249,6 +2341,7 @@ clearBtn.addEventListener("click", () => {
     autoAdjust: false,
     autoAdjustLast: null,
     autoAdjustNote: null,
+    todayDate: null,
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -2260,6 +2353,7 @@ clearBtn.addEventListener("click", () => {
   goalTypeSelect.value = "maintain";
   autoAdjustToggle.checked = false;
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
+  todayDateInput.value = todayIso();
   syncGoalInputs();
   syncAiAnalyzeButton();
   setAddMode("manual");
