@@ -750,6 +750,10 @@ const AUTO_MACRO_SPLIT = {
   gain:     { protein: 0.25, carbs: 0.50, fat: 0.25 },
 };
 const AUTO_PROTEIN_PER_KG = 1.6;
+/* Days below this kcal total are almost certainly not fully logged (e.g. a
+   single snack), so they're excluded from the average — counting them as
+   full eating days would systematically drag the estimated intake down. */
+const MIN_PLAUSIBLE_DAY_KCAL = 800;
 
 function normalizeGoalType(v) {
   return GOAL_TYPES.includes(v) ? v : "maintain";
@@ -1047,7 +1051,6 @@ profileHeight.value = settings.height ?? "";
 profileGender.value = settings.gender;
 syncGoalInputs();
 syncAiAnalyzeButton();
-maybeAutoAdjust();
 
 /* ============================================================
    Rendering — Log tab
@@ -2121,11 +2124,6 @@ goalTypeSelect.addEventListener("change", () => {
 
 /* ---------- automatic calorie adjustment ---------- */
 
-/* Days below this kcal total are almost certainly not fully logged (e.g. a
-   single snack), so they're excluded from the average — counting them as
-   full eating days would systematically drag the estimated intake down. */
-const MIN_PLAUSIBLE_DAY_KCAL = 800;
-
 /* Average daily kcal over the last two weeks, counting only days that
    actually have food logged (empty days would drag the average down).
    Today is excluded because it's still in progress, and the window is
@@ -2550,6 +2548,10 @@ if (!localStorage.getItem(ONBOARD_KEY) && Object.keys(db.days).length === 0 && s
    Boot
    ============================================================ */
 
+/* Runs after every declaration above, so the auto-adjust functions can
+   safely reference top-level constants (a boot call placed any earlier
+   would hit their temporal dead zone and kill the whole script). */
+maybeAutoAdjust();
 render();
 
 /* ---------- install prompt ---------- */
