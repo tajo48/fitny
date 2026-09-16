@@ -395,6 +395,11 @@
     <div class="row" style="flex-wrap:nowrap;">
       <button id="onboardStart" type="button">Save &amp; get started</button>
     </div>
+    <div class="row" style="flex-wrap:nowrap; margin-top:8px;">
+      <button id="onboardImport" type="button" class="secondary">Import my data</button>
+      <button id="onboardInstall" type="button" hidden>Install app</button>
+      <input type="file" id="onboardImportFile" accept="application/json" hidden>
+    </div>
   </div>
 </div>
 
@@ -2341,9 +2346,10 @@ exportBtn.addEventListener("click", () => {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
-importBtn.addEventListener("click", () => importFile.click());
-importFile.addEventListener("change", () => {
-  const file = importFile.files[0];
+/* Shared by the Settings "Import DB" button and the welcome screen's
+   "Import my data" button — parses a fitny export and replaces the db
+   (and settings/profile when present in the file). */
+function handleImportFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
@@ -2383,14 +2389,20 @@ importFile.addEventListener("change", () => {
       saveDB();
       currentDate = todayIso();
       render();
+      // Importing from the welcome screen replaces onboarding entirely.
+      if (!onboardOverlay.hidden) closeOnboarding();
       alert("Import complete.");
     } catch (err) {
       alert("Import failed: " + err.message);
-    } finally {
-      importFile.value = "";
     }
   };
   reader.readAsText(file);
+}
+
+importBtn.addEventListener("click", () => importFile.click());
+importFile.addEventListener("change", () => {
+  handleImportFile(importFile.files[0]);
+  importFile.value = "";
 });
 
 clearBtn.addEventListener("click", () => {
@@ -2443,6 +2455,9 @@ const onboardGender = document.getElementById("onboardGender");
 const onboardGoal = document.getElementById("onboardGoal");
 const onboardPreview = document.getElementById("onboardPreview");
 const onboardStart = document.getElementById("onboardStart");
+const onboardImport = document.getElementById("onboardImport");
+const onboardImportFile = document.getElementById("onboardImportFile");
+const onboardInstall = document.getElementById("onboardInstall");
 
 function onboardProfile() {
   return {
@@ -2471,6 +2486,15 @@ function closeOnboarding() {
   localStorage.setItem(ONBOARD_KEY, "1");
   onboardOverlay.hidden = true;
 }
+
+/* Importing from the welcome screen uses the same handler as the Settings
+   tab — a successful import closes onboarding since the user brought their
+   own data instead of filling in the form. */
+onboardImport.addEventListener("click", () => onboardImportFile.click());
+onboardImportFile.addEventListener("change", () => {
+  handleImportFile(onboardImportFile.files[0]);
+  onboardImportFile.value = "";
+});
 
 onboardStart.addEventListener("click", () => {
   const profile = onboardProfile();
@@ -2545,16 +2569,20 @@ function isInstalled() {
 function showPill() {
   if (isInstalled()) return;
   pill.hidden = false;
+  // The welcome screen gets its own install button while it's open.
+  if (!onboardOverlay.hidden) onboardInstall.hidden = false;
 }
 
 function hidePill() {
   pill.hidden = true;
+  onboardInstall.hidden = true;
 }
 
 window.addEventListener("beforeinstallprompt", (e) => {
   e.preventDefault();
   deferredPrompt = e;
   installBtn.textContent = "Install";
+  onboardInstall.textContent = "Install";
   showPill();
 });
 
@@ -2567,22 +2595,27 @@ window.matchMedia("(display-mode: standalone)").addEventListener("change", (e) =
   if (e.matches) hidePill();
 });
 
-installBtn.addEventListener("click", async () => {
+/* Shared by the corner pill and the welcome screen's install button. */
+async function triggerInstall(btn) {
   if (deferredPrompt) {
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     deferredPrompt = null;
     if (outcome === "accepted") hidePill();
   } else {
-    installBtn.textContent = "Share → Add to Home Screen";
+    btn.textContent = "Share → Add to Home Screen";
   }
-});
+}
+
+installBtn.addEventListener("click", () => triggerInstall(installBtn));
+onboardInstall.addEventListener("click", () => triggerInstall(onboardInstall));
 
 const isIOS =
   /iP(hone|ad|od)/.test(navigator.userAgent) ||
   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 if (isIOS && !("onbeforeinstallprompt" in window)) {
   installBtn.textContent = "Add to Home Screen";
+  onboardInstall.textContent = "Add to Home Screen";
   showPill();
 }
 
