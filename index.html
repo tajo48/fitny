@@ -2196,25 +2196,38 @@ function closeOnboarding() {
 
 onboardStart.addEventListener("click", () => {
   const profile = onboardProfile();
-  if (profile.weightKg && profile.weightKg > 0) {
-    ensureDay(todayIso()).weight = profile.weightKg;
-    saveDB();
-    settings.goalType = normalizeGoalType(profile.goalType);
-    settings.age = profile.age;
-    settings.gender = normalizeGender(profile.gender);
-    settings.height = profile.height;
-    settings.goals.weight = targetWeightFrom(profile.weightKg, profile.goalType);
-    const defaults = computeDefaultGoals(profile);
-    if (defaults) {
-      settings.goals.kcal = defaults.kcal;
-      settings.goals.protein = defaults.protein;
-      settings.goals.carbs = defaults.carbs;
-      settings.goals.fat = defaults.fat;
-    }
-    syncGoalInputs();
-    goalTypeSelect.value = settings.goalType;
-    saveSettings();
+  if (!profile.weightKg || profile.weightKg <= 0) {
+    onboardPreview.textContent = "Please fill in your weight first.";
+    onboardWeight.focus();
+    return;
   }
+  if (!profile.height || profile.height <= 0) {
+    onboardPreview.textContent = "Please fill in your height first.";
+    onboardHeight.focus();
+    return;
+  }
+  if (!profile.age || profile.age <= 0) {
+    onboardPreview.textContent = "Please fill in your age first.";
+    onboardAge.focus();
+    return;
+  }
+  ensureDay(todayIso()).weight = profile.weightKg;
+  saveDB();
+  settings.goalType = normalizeGoalType(profile.goalType);
+  settings.age = profile.age;
+  settings.gender = normalizeGender(profile.gender);
+  settings.height = profile.height;
+  settings.goals.weight = targetWeightFrom(profile.weightKg, profile.goalType);
+  const defaults = computeDefaultGoals(profile);
+  if (defaults) {
+    settings.goals.kcal = defaults.kcal;
+    settings.goals.protein = defaults.protein;
+    settings.goals.carbs = defaults.carbs;
+    settings.goals.fat = defaults.fat;
+  }
+  syncGoalInputs();
+  goalTypeSelect.value = settings.goalType;
+  saveSettings();
   closeOnboarding();
   render();
 });

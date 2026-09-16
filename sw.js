@@ -6,7 +6,7 @@
    requests are cached as they happen. All paths are relative, so the worker
    works at any URL depth. */
 
-const VERSION = "12";
+const VERSION = "13";
 const CORE = "fitny-core-" + VERSION;
 const FONTS = "fitny-fonts-" + VERSION;
 
