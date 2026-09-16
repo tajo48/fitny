@@ -390,7 +390,6 @@
     <p class="hint" id="onboardPreview">Enter your weight to see suggested targets.</p>
     <p class="hint">Want AI food-photo analysis? It needs a free OpenRouter API key — you can add one any time in Settings.</p>
     <div class="row" style="flex-wrap:nowrap;">
-      <button id="onboardSkip" type="button" class="secondary">Skip for now</button>
       <button id="onboardStart" type="button">Save &amp; get started</button>
     </div>
   </div>
@@ -621,7 +620,7 @@
             </select>
             <button id="autofillGoalsBtn" type="button" class="secondary">Autofill</button>
           </div>
-          <p class="hint" style="margin-top:6px;">Uses your most recently logged body weight (or the goal weight above) to fill in the kcal/protein/carbs/fat goals above — overwrites whatever's currently set.</p>
+          <p class="hint" style="margin-top:6px;">Uses your most recently logged body weight (or the goal weight above) to fill in the kcal/protein/carbs/fat goals and a target weight for your chosen goal — overwrites whatever's currently set.</p>
         </div>
       </div>
 
@@ -737,6 +736,14 @@ function computeDefaultGoals({ weightKg, goalType, age, gender, height } = {}) {
   const fat = Math.round(w * 0.8);
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
   return { kcal, protein, carbs, fat };
+}
+
+/* A rough first target for body weight derived from the starting weight and
+   the chosen goal: a ~10% swing for lose/gain, and the current weight
+   itself for maintain. Kept simple and editable later in Settings. */
+function targetWeightFrom(weightKg, goalType) {
+  const factor = { lose: 0.9, maintain: 1, gain: 1.1 }[normalizeGoalType(goalType)];
+  return Math.round(weightKg * factor * 10) / 10;
 }
 
 /* Decides whether a saved model value should follow along with a newly
@@ -2045,6 +2052,7 @@ autofillGoalsBtn.addEventListener("click", () => {
   settings.goals.protein = defaults.protein;
   settings.goals.carbs = defaults.carbs;
   settings.goals.fat = defaults.fat;
+  settings.goals.weight = targetWeightFrom(w, goalTypeSelect.value);
   syncGoalInputs();
   saveSettings();
   renderTotals();
@@ -2156,7 +2164,6 @@ const onboardAge = document.getElementById("onboardAge");
 const onboardGender = document.getElementById("onboardGender");
 const onboardGoal = document.getElementById("onboardGoal");
 const onboardPreview = document.getElementById("onboardPreview");
-const onboardSkip = document.getElementById("onboardSkip");
 const onboardStart = document.getElementById("onboardStart");
 
 function onboardProfile() {
@@ -2170,9 +2177,10 @@ function onboardProfile() {
 }
 
 function updateOnboardPreview() {
-  const defaults = computeDefaultGoals(onboardProfile());
+  const profile = onboardProfile();
+  const defaults = computeDefaultGoals(profile);
   onboardPreview.textContent = defaults
-    ? `Suggested: ${defaults.kcal} kcal · ${defaults.protein}g protein · ${defaults.carbs}g carbs · ${defaults.fat}g fat`
+    ? `Suggested: ${defaults.kcal} kcal · ${defaults.protein}g protein · ${defaults.carbs}g carbs · ${defaults.fat}g fat · target weight ${targetWeightFrom(profile.weightKg, profile.goalType)} kg`
     : "Enter your weight to see suggested targets.";
 }
 onboardWeight.addEventListener("input", updateOnboardPreview);
@@ -2186,7 +2194,6 @@ function closeOnboarding() {
   onboardOverlay.hidden = true;
 }
 
-onboardSkip.addEventListener("click", closeOnboarding);
 onboardStart.addEventListener("click", () => {
   const profile = onboardProfile();
   if (profile.weightKg && profile.weightKg > 0) {
@@ -2196,14 +2203,15 @@ onboardStart.addEventListener("click", () => {
     settings.age = profile.age;
     settings.gender = normalizeGender(profile.gender);
     settings.height = profile.height;
+    settings.goals.weight = targetWeightFrom(profile.weightKg, profile.goalType);
     const defaults = computeDefaultGoals(profile);
     if (defaults) {
       settings.goals.kcal = defaults.kcal;
       settings.goals.protein = defaults.protein;
       settings.goals.carbs = defaults.carbs;
       settings.goals.fat = defaults.fat;
-      syncGoalInputs();
     }
+    syncGoalInputs();
     goalTypeSelect.value = settings.goalType;
     saveSettings();
   }
