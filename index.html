@@ -215,7 +215,7 @@
   .itemRow:first-of-type { border-top: none; }
   .itemMain { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; }
   .itemName { font-size: 14px; color: #c6d0f5; overflow-wrap: anywhere; }
-  .itemGrams { font-size: 11px; color: #a5adce; }
+  .itemSub { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: #a5adce; }
   .itemMacros { display: flex; gap: 8px; font-size: 11px; color: #a5adce; flex-wrap: wrap; justify-content: flex-end; }
   .itemDel {
     background: transparent;
@@ -969,8 +969,6 @@ function syncGoalInputs() {
   goalWeight.value = settings.goals.weight ?? "";
 }
 
-manualMeal.value = defaultMeal();
-aiMealSelect.value = defaultMeal();
 apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
 goalTypeSelect.value = settings.goalType;
@@ -1086,10 +1084,12 @@ function itemRowHtml(meal, it) {
     <div class="itemRow">
       <div class="itemMain">
         <span class="itemName">${esc(it.name)}</span>
-        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+        <span class="itemSub">
+          ${it.grams != null ? `<span class="itemGrams">${esc(it.grams)} g</span>` : ""}
+          <span>${Math.round(num(it.kcal))} kcal</span>
+        </span>
       </div>
       <div class="itemMacros">
-        <span>${Math.round(num(it.kcal))} kcal</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
@@ -1201,17 +1201,24 @@ function syncAiAnalyzeButton() {
   }
 }
 
+/* Swaps which add form is visible and which mode button is highlighted —
+   shared by the mode buttons and by boot/key changes so the default form
+   follows whether an AI key is set. */
+function setAddMode(mode) {
+  document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+  manualForm.hidden = mode !== "manual";
+  aiForm.hidden = mode !== "ai";
+  historyForm.hidden = mode !== "history";
+  if (mode === "history") renderHistoryResults();
+  if (mode === "ai") syncAiAnalyzeButton();
+}
+
 document.querySelectorAll(".modeBtn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b === btn));
-    const mode = btn.dataset.mode;
-    manualForm.hidden = mode !== "manual";
-    aiForm.hidden = mode !== "ai";
-    historyForm.hidden = mode !== "history";
-    if (mode === "history") renderHistoryResults();
-    if (mode === "ai") syncAiAnalyzeButton();
-  });
+  btn.addEventListener("click", () => setAddMode(btn.dataset.mode));
 });
+
+/* With a key configured, AI is the default add form; without one, manual is. */
+setAddMode(settings.apiKey ? "ai" : "manual");
 
 /* ---------- add from history ---------- */
 
@@ -1219,20 +1226,61 @@ const historyMealSelect = document.getElementById("historyMeal");
 const historySearch = document.getElementById("historySearch");
 const historyResultsEl = document.getElementById("historyResults");
 const historyStatus = document.getElementById("historyStatus");
-historyMealSelect.value = defaultMeal();
 let historyItemsCache = [];
 
-/* Re-suggests breakfast/lunch/dinner/snack from the current time of day.
-   Only makes sense while looking at today — browsing past or future days
+/* ---------- meal sync across the three add forms ---------- */
+
+/* One shared "current meal" drives the manual, AI, and history forms so
+   they can never drift apart. It starts from the time of day and follows
+   time-of-day changes while looking at today; picking a meal in any form
+   is mirrored into the other two and sticks until the view returns to
+   today. */
+let currentMeal = defaultMeal();
+let mealManuallySet = false;
+
+function syncMealSelects() {
+  manualMeal.value = currentMeal;
+  aiMealSelect.value = currentMeal;
+  historyMealSelect.value = currentMeal;
+}
+
+function refreshMealByTime() {
+  if (currentDate !== todayIso() || mealManuallySet) return;
+  const meal = defaultMeal();
+  if (meal !== currentMeal) {
+    currentMeal = meal;
+    syncMealSelects();
+  }
+}
+
+/* Re-suggests breakfast/lunch/dinner/snack from the current time of day
+   whenever the view moves back to today. Browsing past or future days
    leaves whatever meal you last picked alone, since "right now" has no
    bearing on a log entry for a different date. */
 function applyDefaultMealSelects() {
   if (currentDate !== todayIso()) return;
-  const meal = defaultMeal();
-  manualMeal.value = meal;
-  aiMealSelect.value = meal;
-  historyMealSelect.value = meal;
+  mealManuallySet = false;
+  currentMeal = defaultMeal();
+  syncMealSelects();
 }
+
+function onMealSelectChange(e) {
+  currentMeal = e.target.value;
+  mealManuallySet = true;
+  syncMealSelects();
+}
+manualMeal.addEventListener("change", onMealSelectChange);
+aiMealSelect.addEventListener("change", onMealSelectChange);
+historyMealSelect.addEventListener("change", onMealSelectChange);
+
+syncMealSelects();
+
+/* Keep the suggested meal in step with the clock while the app sits open
+   (timers throttle in background tabs, so also re-check on focus). */
+setInterval(refreshMealByTime, 30 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") refreshMealByTime();
+});
 
 function pastItems() {
   const map = new Map();
@@ -1255,10 +1303,12 @@ function historyRowHtml(it, i) {
     <div class="historyRow">
       <div class="itemMain">
         <span class="itemName">${esc(it.name)}</span>
-        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+        <span class="itemSub">
+          ${it.grams != null ? `<span class="itemGrams">${esc(it.grams)} g</span>` : ""}
+          <span>${Math.round(num(it.kcal))} kcal</span>
+        </span>
       </div>
       <div class="itemMacros">
-        <span>${Math.round(num(it.kcal))} kcal</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
@@ -1288,7 +1338,8 @@ historyResultsEl.addEventListener("click", (e) => {
   if (!btn) return;
   const it = historyItemsCache[Number(btn.dataset.i)];
   if (!it) return;
-  const meal = historyMealSelect.value;
+  refreshMealByTime();
+  const meal = currentMeal;
   const day = ensureDay(currentDate);
   day.meals[meal].push({
     id: uid(),
@@ -1308,6 +1359,7 @@ historyResultsEl.addEventListener("click", (e) => {
 /* ---------- manual add ---------- */
 
 manualAddBtn.addEventListener("click", () => {
+  refreshMealByTime();
   const name = manualName.value.trim();
   if (!name) { manualName.focus(); return; }
   const grams = numOrNull(manualGrams.value);
@@ -1316,7 +1368,7 @@ manualAddBtn.addEventListener("click", () => {
   const fat = numOrNull(manualFat.value) ?? 0;
   const kcal = manualKcal.value !== "" ? (numOrNull(manualKcal.value) ?? 0) : Math.round(protein * 4 + carbs * 4 + fat * 9);
   const gi = numOrNull(manualGI.value);
-  const meal = manualMeal.value;
+  const meal = currentMeal;
   const day = ensureDay(currentDate);
   day.meals[meal].push({ id: uid(), name, grams, kcal, protein, carbs, fat, gi });
   saveDB();
@@ -1536,10 +1588,12 @@ function aiRowHtml(it, i) {
     <div class="itemRow">
       <div class="itemMain">
         <span class="itemName">${esc(it.name)}</span>
-        <span class="itemGrams">${it.grams != null ? esc(it.grams) + " g" : ""}</span>
+        <span class="itemSub">
+          ${it.grams != null ? `<span class="itemGrams">${esc(it.grams)} g</span>` : ""}
+          <span>${Math.round(num(it.kcal))} kcal</span>
+        </span>
       </div>
       <div class="itemMacros">
-        <span>${Math.round(num(it.kcal))} kcal</span>
         <span><i class="dot" style="background:#a6d189"></i>${num(it.protein).toFixed(0)}</span>
         <span><i class="dot" style="background:#e78284"></i>${num(it.carbs).toFixed(0)}</span>
         <span><i class="dot" style="background:#e5c890"></i>${num(it.fat).toFixed(0)}</span>
@@ -1577,7 +1631,8 @@ aiResultsEl.addEventListener("click", (e) => {
     const i = Number(approveBtn.dataset.i);
     const it = aiPending[i];
     if (!it) return;
-    const meal = aiMealSelect.value;
+    refreshMealByTime();
+    const meal = currentMeal;
     const day = ensureDay(currentDate);
     day.meals[meal].push({
       id: uid(),
@@ -1905,9 +1960,12 @@ tabButtons.forEach((btn) => {
    ============================================================ */
 
 apiKeyInput.addEventListener("input", () => {
+  const prevKey = settings.apiKey;
   settings.apiKey = apiKeyInput.value.trim();
   saveSettings();
   syncAiAnalyzeButton();
+  if (prevKey && !settings.apiKey) setAddMode("manual");
+  else if (!prevKey && settings.apiKey) setAddMode("ai");
 });
 modelInput.addEventListener("input", () => {
   settings.model = modelInput.value.trim() || DEFAULT_MODEL;
@@ -2043,6 +2101,7 @@ importFile.addEventListener("change", () => {
         goalTypeSelect.value = settings.goalType;
         syncGoalInputs();
         syncAiAnalyzeButton();
+        setAddMode(settings.apiKey ? "ai" : "manual");
       }
       currentDate = todayIso();
       render();
@@ -2057,9 +2116,31 @@ importFile.addEventListener("change", () => {
 });
 
 clearBtn.addEventListener("click", () => {
-  if (!confirm("Erase ALL logged data? This cannot be undone.")) return;
+  if (!confirm("Erase ALL data — food log, settings, goals, and API key? This cannot be undone.")) return;
+  localStorage.removeItem(DB_KEY);
+  localStorage.removeItem(SETTINGS_KEY);
+  localStorage.removeItem(ONBOARD_KEY);
   db.days = {};
-  saveDB();
+  Object.assign(settings, {
+    apiKey: "",
+    model: DEFAULT_MODEL,
+    goalType: "maintain",
+    age: null,
+    gender: "",
+    height: null,
+    defaultModelSeen: DEFAULT_MODEL,
+    goals: emptyGoals(),
+  });
+  aiPending = [];
+  aiText.value = "";
+  clearAiImage();
+  renderAiResults();
+  apiKeyInput.value = "";
+  modelInput.value = DEFAULT_MODEL;
+  goalTypeSelect.value = "maintain";
+  syncGoalInputs();
+  syncAiAnalyzeButton();
+  setAddMode("manual");
   render();
 });
 
