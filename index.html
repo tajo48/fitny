@@ -600,6 +600,26 @@
       </div>
 
       <div class="card">
+        <h3 style="margin-bottom:8px;">Profile</h3>
+        <div class="row">
+          <div class="field"><label for="profileAge">Age</label><input type="number" id="profileAge" inputmode="numeric" min="0" placeholder="e.g. 30"></div>
+          <div class="field"><label for="profileHeight">Height (cm)</label><input type="number" id="profileHeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 175"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label for="profileWeight">Body weight (kg)</label><input type="number" id="profileWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
+          <div class="field">
+            <label for="profileGender">Gender</label>
+            <select id="profileGender">
+              <option value="">Not set</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint">Used by Automatic mode's static estimate (Mifflin-St Jeor) until you have enough logged data for a personalized target. Body weight edits the day currently selected on the Log tab.</p>
+      </div>
+
+      <div class="card">
         <h3 style="margin-bottom:8px;">Daily goals</h3>
         <p class="hint" style="margin-bottom:10px;">Leave any field blank to hide it from the Log tab's progress bars. Kcal and protein/carbs/fat stay in sync (4 / 4 / 9 kcal per gram): editing a macro recalculates kcal, and editing kcal rescales the macros to match.</p>
         <div class="row">
@@ -629,18 +649,6 @@
           </div>
           <p class="hint" id="autoAdjustStatus" style="margin-top:6px;">Turn Automatic on to let Fitny recalculate your kcal goal from your goal type, your logged intake, and your weight trend over the last two weeks. While it's on, manual goal edits last until the next adjustment.</p>
         </div>
-      </div>
-
-      <div class="card">
-        <h3 style="margin-bottom:8px;">Date</h3>
-        <div class="field">
-          <label for="todayDateInput">Today's date</label>
-          <div class="row" style="flex-wrap:nowrap;">
-            <input type="date" id="todayDateInput">
-            <button id="resetTodayBtn" type="button" class="secondary small">Use device date</button>
-          </div>
-        </div>
-        <p class="hint">Fitny uses this as "today" for the Today button, chart ranges, and Automatic adjustment. Clear it or press "Use device date" to follow your device's clock.</p>
       </div>
 
       <div class="card">
@@ -724,6 +732,9 @@ const GOAL_KCAL_FACTOR = { lose: 0.85, maintain: 1, recomp: 1, gain: 1.15 };
    caused it (and back into a calorie target). */
 const AUTO_GOAL_RATE = { lose: -0.35, maintain: 0, recomp: 0, gain: 0.25 };
 const KCAL_PER_KG = 7700;
+/* The rate-based math above works in kg/week, but intake and TDEE are
+   daily — so the kg↔kcal conversion needs the same unit: 7700 ÷ 7. */
+const KCAL_PER_KG_PER_DAY = KCAL_PER_KG / 7;
 
 function normalizeGoalType(v) {
   return GOAL_TYPES.includes(v) ? v : "maintain";
@@ -800,10 +811,10 @@ function loadSettings() {
       const age = numOrNull(parsed.age);
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, todayDate: isIsoDate(parsed.todayDate) ? parsed.todayDate : null, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, todayDate: null, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -908,21 +919,13 @@ function dateToIso(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
-/* Strict ISO-date check used for the user-overridable "today" so a bogus
-   stored value can never turn into a shifted Date. */
-function isIsoDate(s) {
-  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const [y, m, d] = s.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
-}
 function shiftDate(iso, days) {
   const d = isoToDate(iso);
   d.setDate(d.getDate() + days);
   return dateToIso(d);
 }
 function todayIso() {
-  return settings.todayDate || dateToIso(new Date());
+  return dateToIso(new Date());
 }
 function defaultMeal() {
   const h = new Date().getHours();
@@ -997,8 +1000,10 @@ const goalWeight = document.getElementById("goalWeight");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
 const autoAdjustToggle = document.getElementById("autoAdjustToggle");
 const autoAdjustStatus = document.getElementById("autoAdjustStatus");
-const todayDateInput = document.getElementById("todayDateInput");
-const resetTodayBtn = document.getElementById("resetTodayBtn");
+const profileAge = document.getElementById("profileAge");
+const profileHeight = document.getElementById("profileHeight");
+const profileWeight = document.getElementById("profileWeight");
+const profileGender = document.getElementById("profileGender");
 const weightGoalHint = document.getElementById("weightGoalHint");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
@@ -1020,7 +1025,9 @@ apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
 goalTypeSelect.value = settings.goalType;
 autoAdjustToggle.checked = settings.autoAdjust;
-todayDateInput.value = todayIso();
+profileAge.value = settings.age ?? "";
+profileHeight.value = settings.height ?? "";
+profileGender.value = settings.gender;
 syncGoalInputs();
 syncAiAnalyzeButton();
 maybeAutoAdjust();
@@ -1180,6 +1187,7 @@ function render() {
   todayBtn.classList.toggle("current", currentDate === todayIso());
   const day = getDay(currentDate);
   weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
+  profileWeight.value = weightInput.value;
   renderTotals();
   renderMeals();
   renderWeightGoalHint();
@@ -2124,7 +2132,7 @@ function weightTrendLast14Days() {
 /* Turns "what actually happened" (intake + weight trend) into a new kcal
    goal for the chosen goal type:
      1. estimate real TDEE from intake and observed weight change
-        (intake − TDEE ≈ 7700 kcal × kg/week),
+        (intake − TDEE ≈ 1100 kcal × kg/week, i.e. 7700 kcal/kg ÷ 7 days),
      2. add back the desired weekly rate for the goal,
      3. clamp to sane bounds and cap each step at ±20% so one noisy week
         can't yank the goal around wildly. */
@@ -2133,9 +2141,9 @@ function computeAutoAdjustment() {
   if (!trend) return { error: "needs at least 3 weigh-ins spanning 7+ days in the last two weeks." };
   const intake = avgKcalLast14Days();
   if (intake == null) return { error: "needs at least 3 days of food logged in the last two weeks." };
-  const tdee = Math.min(4500, Math.max(1400, intake - KCAL_PER_KG * trend.rateKgPerWeek));
+  const tdee = Math.min(4500, Math.max(1400, intake - KCAL_PER_KG_PER_DAY * trend.rateKgPerWeek));
   const desired = AUTO_GOAL_RATE[normalizeGoalType(settings.goalType)];
-  let target = tdee + KCAL_PER_KG * desired;
+  let target = tdee + KCAL_PER_KG_PER_DAY * desired;
   target = Math.min(6000, Math.max(1200, target));
   target = Math.min(tdee * 1.2, Math.max(tdee * 0.8, target));
   const current = settings.goals.kcal;
@@ -2222,36 +2230,28 @@ autoAdjustToggle.addEventListener("change", () => {
   }
 });
 
-/* ---------- today's date override ---------- */
+/* ---------- profile (feeds Automatic's static estimate) ---------- */
 
-function refreshTodayView() {
-  todayDateInput.value = todayIso();
-  render();
-  if (activeTab === "history") {
-    drawAllCharts();
-    renderWeightList();
-  }
-}
-
-function applyTodayDateChange(v) {
-  if (v && !isIsoDate(v)) {
-    refreshTodayView();
-    return;
-  }
-  const wasOnToday = currentDate === todayIso();
-  settings.todayDate = v || null;
+function onProfileChange() {
+  settings.age = numOrNull(profileAge.value);
+  settings.height = numOrNull(profileHeight.value);
+  settings.gender = normalizeGender(profileGender.value);
   saveSettings();
-  if (wasOnToday) currentDate = todayIso();
-  applyDefaultMealSelects();
-  refreshTodayView();
   if (settings.autoAdjust) {
     settings.autoAdjustLast = null;
     maybeAutoAdjust();
   }
 }
-
-todayDateInput.addEventListener("change", () => applyTodayDateChange(todayDateInput.value));
-resetTodayBtn.addEventListener("click", () => applyTodayDateChange(null));
+profileAge.addEventListener("input", onProfileChange);
+profileHeight.addEventListener("input", onProfileChange);
+profileGender.addEventListener("change", onProfileChange);
+profileWeight.addEventListener("input", () => {
+  const v = numOrNull(profileWeight.value);
+  ensureDay(currentDate).weight = v;
+  saveDB();
+  weightInput.value = profileWeight.value;
+  renderWeightGoalHint();
+});
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
   apiKeyInput.type = show ? "text" : "password";
@@ -2299,7 +2299,6 @@ importFile.addEventListener("change", () => {
         settings.autoAdjust = parsed.settings.autoAdjust === true;
         settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" ? parsed.settings.autoAdjustLast : null;
         settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
-        settings.todayDate = isIsoDate(parsed.settings.todayDate) ? parsed.settings.todayDate : null;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -2308,7 +2307,9 @@ importFile.addEventListener("change", () => {
         syncAiAnalyzeButton();
         setAddMode(settings.apiKey ? "ai" : "manual");
         autoAdjustToggle.checked = settings.autoAdjust;
-        todayDateInput.value = todayIso();
+        profileAge.value = settings.age ?? "";
+        profileHeight.value = settings.height ?? "";
+        profileGender.value = settings.gender;
       }
       db.days = parsed.days;
       saveDB();
@@ -2341,7 +2342,6 @@ clearBtn.addEventListener("click", () => {
     autoAdjust: false,
     autoAdjustLast: null,
     autoAdjustNote: null,
-    todayDate: null,
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -2353,7 +2353,9 @@ clearBtn.addEventListener("click", () => {
   goalTypeSelect.value = "maintain";
   autoAdjustToggle.checked = false;
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
-  todayDateInput.value = todayIso();
+  profileAge.value = "";
+  profileHeight.value = "";
+  profileGender.value = "";
   syncGoalInputs();
   syncAiAnalyzeButton();
   setAddMode("manual");
