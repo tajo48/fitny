@@ -784,7 +784,9 @@ function computeDefaultGoals({ weightKg, goalType, age, gender, height } = {}) {
   const protein = Math.round(w * 1.8);
   const fat = Math.round(w * 0.8);
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
-  return { kcal, protein, carbs, fat };
+  const kcalFromMacros = protein * 4 + carbs * 4 + fat * 9;
+  const kcalFinal = kcalFromMacros > kcal ? kcalFromMacros : kcal;
+  return { kcal: kcalFinal, protein, carbs, fat };
 }
 
 /* A rough first target for body weight derived from the starting weight and
@@ -2114,15 +2116,25 @@ goalTypeSelect.addEventListener("change", () => {
 
 /* ---------- automatic calorie adjustment ---------- */
 
+/* Days below this kcal total are almost certainly not fully logged (e.g. a
+   single snack), so they're excluded from the average — counting them as
+   full eating days would systematically drag the estimated intake down. */
+const MIN_PLAUSIBLE_DAY_KCAL = 800;
+
 /* Average daily kcal over the last two weeks, counting only days that
-   actually have food logged (empty days would drag the average down). */
+   actually have food logged (empty days would drag the average down).
+   Today is excluded because it's still in progress, and the window is
+   strictly cutoff ≤ date < today so it really is 14 days. */
 function avgKcalLast14Days() {
-  const cutoff = shiftDate(todayIso(), -14);
+  const today = todayIso();
+  const cutoff = shiftDate(today, -14);
   let sum = 0;
   let count = 0;
   for (const date of Object.keys(db.days)) {
-    if (date < cutoff || dayItemCount(date) === 0) continue;
-    sum += totalsFor(date).kcal;
+    if (date < cutoff || date >= today) continue;
+    const dayKcal = totalsFor(date).kcal;
+    if (dayKcal < MIN_PLAUSIBLE_DAY_KCAL) continue;
+    sum += dayKcal;
     count++;
   }
   return count >= 3 ? sum / count : null;
@@ -2182,11 +2194,16 @@ function computeAutoAdjustment() {
 
 /* Static fallback for Automatic mode when there isn't enough logged data
    for a personalized TDEE estimate yet: same formula the old Autofill
-   button used — latest logged weight (or the goal weight), goal type, and
-   profile → kcal/protein/carbs/fat plus a target weight. */
+   button used — latest logged weight (or whatever's typed in the weight
+   input), goal type, and profile → kcal/protein/carbs/fat plus a target
+   weight. The goal weight is deliberately never used as the current
+   weight here. */
 function staticGoalEstimate() {
   const entries = weightEntries();
-  const w = entries.length ? entries[entries.length - 1].weight : (settings.goals.weight ?? numOrNull(weightInput.value));
+  // Never treat the goal weight as the current weight — for "lose" the goal
+  // is already ~10% lower, and GOAL_KCAL_FACTOR would then apply the deficit
+  // a second time on top of it.
+  const w = entries.length ? entries[entries.length - 1].weight : numOrNull(weightInput.value);
   const defaults = computeDefaultGoals({
     weightKg: w,
     goalType: settings.goalType,
@@ -2205,18 +2222,22 @@ function latestWeightKg() {
 
 /* Sets protein/carbs/fat goals for a new kcal goal using the goal's own
    macro split, with a protein floor of 1.6 g/kg so muscle is protected on
-   a cut and supported on a bulk. Carbs and fat share the remaining
-   calories in the split's own carb:fat ratio. */
+   a cut and supported on a bulk. Carbs take their share of what's left
+   after protein, and fat fills in the remainder so the macros always sum
+   to the kcal goal. */
 function applyAutoMacros(kcal, weightKg) {
   const g = settings.goals;
   const split = AUTO_MACRO_SPLIT[normalizeGoalType(settings.goalType)] || AUTO_MACRO_SPLIT.maintain;
   let protein = Math.round((kcal * split.protein) / 4);
   const w = Number(weightKg);
   if (Number.isFinite(w) && w > 0) protein = Math.max(protein, Math.round(w * AUTO_PROTEIN_PER_KG));
+  // Never let protein alone exceed the kcal goal.
+  protein = Math.min(protein, Math.floor(kcal / 4));
   const remaining = Math.max(0, kcal - protein * 4);
   const carbKcalShare = (split.carbs * 4) / (split.carbs * 4 + split.fat * 9);
   const carbs = Math.round((remaining * carbKcalShare) / 4);
-  const fat = Math.round((remaining * (1 - carbKcalShare)) / 9);
+  // Fat fills in whatever's left so the macros always sum to the kcal goal.
+  const fat = Math.max(0, Math.round((kcal - protein * 4 - carbs * 4) / 9));
   g.protein = protein;
   g.carbs = carbs;
   g.fat = fat;
@@ -2226,10 +2247,11 @@ function applyAutoMacros(kcal, weightKg) {
 }
 
 /* Runs after every data change (and at boot). Does nothing unless Automatic
-   is on, and recalculates at most once per day so daily weight noise can't
-   make the goal bounce around. With enough data it uses the real TDEE
-   estimate; without it, it falls back to a static estimate so the goal is
-   never left blank. */
+   is on. A successful personalized adjustment is stamped with today's date
+   so it runs at most once per day (daily weight noise can't make the goal
+   bounce around); the static fallback is left unstamped since it's
+   idempotent, so a personalized recalculation can still kick in the moment
+   enough data exists. */
 function maybeAutoAdjust() {
   if (!settings.autoAdjust) return;
   if (settings.autoAdjustLast === todayIso()) {
@@ -2251,14 +2273,13 @@ function maybeAutoAdjust() {
   }
   const fallback = staticGoalEstimate();
   if (!fallback) {
-    autoAdjustStatus.textContent = "Automatic is on, but can't estimate anything yet — log a body weight (Log tab) or set a goal weight above.";
+    autoAdjustStatus.textContent = "Automatic is on, but can't estimate anything yet — log a body weight (Log tab) to get a static target.";
     return;
   }
   settings.goals.kcal = fallback.kcal;
   applyAutoMacros(fallback.kcal, fallback.weightKg);
   if (fallback.weight != null) settings.goals.weight = fallback.weight;
   syncGoalInputs();
-  settings.autoAdjustLast = todayIso();
   settings.autoAdjustNote =
     `Static estimate: ${fallback.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
   saveSettings();
