@@ -144,6 +144,8 @@
   input:focus, select:focus, textarea:focus { outline: 2px solid #8caaee; outline-offset: 1px; border-color: #8caaee; }
   textarea { resize: vertical; min-height: 60px; }
   input[type="checkbox"] { width: auto; padding: 0; }
+  .toggleRow { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c6d0f5; cursor: pointer; }
+  .toggleRow input[type="checkbox"] { width: 18px; height: 18px; accent-color: #8caaee; flex: 0 0 auto; }
 
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
   .field label { font-size: 12px; color: #a5adce; }
@@ -373,9 +375,9 @@
       <div class="field">
         <label for="onboardGender">Gender</label>
         <select id="onboardGender">
+          <option value="" disabled selected>Select…</option>
           <option value="male">Male</option>
           <option value="female">Female</option>
-          <option value="other">Other</option>
         </select>
       </div>
     </div>
@@ -384,6 +386,7 @@
       <select id="onboardGoal">
         <option value="lose">Lose weight</option>
         <option value="maintain" selected>Maintain weight</option>
+        <option value="recomp">Recomposition (lose fat, build muscle)</option>
         <option value="gain">Gain weight / build muscle</option>
       </select>
     </div>
@@ -611,16 +614,20 @@
           <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="number" id="goalWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
         </div>
         <div class="field">
-          <label for="goalTypeSelect">Suggest targets from weight</label>
+          <label for="goalTypeSelect">Goal</label>
           <div class="row" style="flex-wrap:nowrap;">
             <select id="goalTypeSelect">
               <option value="lose">Lose weight</option>
               <option value="maintain" selected>Maintain weight</option>
+              <option value="recomp">Recomposition (lose fat, build muscle)</option>
               <option value="gain">Gain weight / build muscle</option>
             </select>
-            <button id="autofillGoalsBtn" type="button" class="secondary">Autofill</button>
+            <label class="toggleRow">
+              <input type="checkbox" id="autoAdjustToggle">
+              Automatic
+            </label>
           </div>
-          <p class="hint" style="margin-top:6px;">Uses your most recently logged body weight (or the goal weight above) to fill in the kcal/protein/carbs/fat goals and a target weight for your chosen goal — overwrites whatever's currently set.</p>
+          <p class="hint" id="autoAdjustStatus" style="margin-top:6px;">Turn Automatic on to let Fitny recalculate your kcal goal from your goal type, your logged intake, and your weight trend over the last two weeks. While it's on, manual goal edits last until the next adjustment.</p>
         </div>
       </div>
 
@@ -676,13 +683,14 @@ function loadDB() {
 
 function saveDB() {
   localStorage.setItem(DB_KEY, JSON.stringify(db));
+  maybeAutoAdjust();
 }
 
 function emptyGoals() {
   return { kcal: null, protein: null, carbs: null, fat: null, weight: null };
 }
 
-const GOAL_TYPES = ["lose", "maintain", "gain"];
+const GOAL_TYPES = ["lose", "maintain", "recomp", "gain"];
 /* Flat kcal-per-kg-of-bodyweight fallback for anyone who hasn't given an
    age/height/gender (so a real BMR can't be computed) — still better than
    leaving every goal blank. */
@@ -693,21 +701,29 @@ const MAINTENANCE_KCAL_PER_KG = 30;
 const ACTIVITY_MULTIPLIER = 1.4;
 /* Applied on top of estimated maintenance calories per goal — a ~15%
    deficit/surplus is a common, moderate starting point for weight
-   loss/gain. */
-const GOAL_KCAL_FACTOR = { lose: 0.85, maintain: 1, gain: 1.15 };
+   loss/gain; recomposition keeps calories at maintenance. */
+const GOAL_KCAL_FACTOR = { lose: 0.85, maintain: 1, recomp: 1, gain: 1.15 };
+
+/* ---------- automatic calorie adjustment ---------- */
+
+/* Desired weekly body-weight change per goal (kg/week) that Automatic mode
+   steers toward, and the rough energy content of one kg of body weight —
+   used to convert observed weight change into the surplus/deficit that
+   caused it (and back into a calorie target). */
+const AUTO_GOAL_RATE = { lose: -0.35, maintain: 0, recomp: 0, gain: 0.25 };
+const KCAL_PER_KG = 7700;
 
 function normalizeGoalType(v) {
   return GOAL_TYPES.includes(v) ? v : "maintain";
 }
 
 function normalizeGender(v) {
-  return v === "male" || v === "female" || v === "other" ? v : "";
+  return v === "male" || v === "female" ? v : "";
 }
 
 /* Mifflin-St Jeor resting-metabolism estimate — the standard, widely-used
-   formula that needs weight/height/age/gender. "Other" splits the
-   difference between the male/female offsets since there's no dedicated
-   term for it in the original formula. */
+   formula that needs weight/height/age/gender. The fallback below only
+   applies when no gender is saved yet (onboarding requires one). */
 function bmrMifflinStJeor(weightKg, heightCm, age, gender) {
   const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
   if (gender === "male") return base + 5;
@@ -740,9 +756,10 @@ function computeDefaultGoals({ weightKg, goalType, age, gender, height } = {}) {
 
 /* A rough first target for body weight derived from the starting weight and
    the chosen goal: a ~10% swing for lose/gain, and the current weight
-   itself for maintain. Kept simple and editable later in Settings. */
+   itself for maintain and recomposition. Kept simple and editable later in
+   Settings. */
 function targetWeightFrom(weightKg, goalType) {
-  const factor = { lose: 0.9, maintain: 1, gain: 1.1 }[normalizeGoalType(goalType)];
+  const factor = { lose: 0.9, maintain: 1, recomp: 1, gain: 1.1 }[normalizeGoalType(goalType)];
   return Math.round(weightKg * factor * 10) / 10;
 }
 
@@ -771,10 +788,10 @@ function loadSettings() {
       const age = numOrNull(parsed.age);
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -958,7 +975,8 @@ const goalCarbs = document.getElementById("goalCarbs");
 const goalFat = document.getElementById("goalFat");
 const goalWeight = document.getElementById("goalWeight");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
-const autofillGoalsBtn = document.getElementById("autofillGoalsBtn");
+const autoAdjustToggle = document.getElementById("autoAdjustToggle");
+const autoAdjustStatus = document.getElementById("autoAdjustStatus");
 const weightGoalHint = document.getElementById("weightGoalHint");
 const exportBtn = document.getElementById("exportBtn");
 const importBtn = document.getElementById("importBtn");
@@ -979,8 +997,10 @@ function syncGoalInputs() {
 apiKeyInput.value = settings.apiKey;
 modelInput.value = settings.model;
 goalTypeSelect.value = settings.goalType;
+autoAdjustToggle.checked = settings.autoAdjust;
 syncGoalInputs();
 syncAiAnalyzeButton();
+maybeAutoAdjust();
 
 /* ============================================================
    Rendering — Log tab
@@ -2033,29 +2053,114 @@ goalWeight.addEventListener("input", () => {
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
+  if (settings.autoAdjust) {
+    settings.autoAdjustLast = null;
+    maybeAutoAdjust();
+  }
 });
-autofillGoalsBtn.addEventListener("click", () => {
-  const entries = weightEntries();
-  const w = entries.length ? entries[entries.length - 1].weight : (settings.goals.weight ?? numOrNull(weightInput.value));
-  const defaults = computeDefaultGoals({
-    weightKg: w,
-    goalType: goalTypeSelect.value,
-    age: settings.age,
-    gender: settings.gender,
-    height: settings.height,
-  });
-  if (!defaults) {
-    alert("Log a body weight first (on the Log tab) or set a goal weight above.");
+
+/* ---------- automatic calorie adjustment ---------- */
+
+/* Average daily kcal over the last two weeks, counting only days that
+   actually have food logged (empty days would drag the average down). */
+function avgKcalLast14Days() {
+  const cutoff = shiftDate(todayIso(), -14);
+  let sum = 0;
+  let count = 0;
+  for (const date of Object.keys(db.days)) {
+    if (date < cutoff || dayItemCount(date) === 0) continue;
+    sum += totalsFor(date).kcal;
+    count++;
+  }
+  return count >= 3 ? sum / count : null;
+}
+
+/* Least-squares fit of body weight over the last two weeks → kg/week trend.
+   The fit resists single-day water-weight noise better than comparing two
+   snapshots, and needs 3+ weigh-ins spread over 7+ days to be meaningful. */
+function weightTrendLast14Days() {
+  const cutoff = shiftDate(todayIso(), -14);
+  const entries = weightEntries().filter((e) => e.date >= cutoff);
+  if (entries.length < 3) return null;
+  const t0 = isoToDate(entries[0].date).getTime() / 86400000;
+  const t1 = isoToDate(entries[entries.length - 1].date).getTime() / 86400000;
+  if (t1 - t0 < 7) return null;
+  let sx = 0, sy = 0, sxy = 0, sxx = 0;
+  const n = entries.length;
+  for (const e of entries) {
+    const x = isoToDate(e.date).getTime() / 86400000;
+    sx += x;
+    sy += e.weight;
+    sxy += x * e.weight;
+    sxx += x * x;
+  }
+  const slopePerDay = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  return { rateKgPerWeek: slopePerDay * 7 };
+}
+
+/* Turns "what actually happened" (intake + weight trend) into a new kcal
+   goal for the chosen goal type:
+     1. estimate real TDEE from intake and observed weight change
+        (intake − TDEE ≈ 7700 kcal × kg/week),
+     2. add back the desired weekly rate for the goal,
+     3. clamp to sane bounds and cap each step at ±20% so one noisy week
+        can't yank the goal around wildly. */
+function computeAutoAdjustment() {
+  const trend = weightTrendLast14Days();
+  if (!trend) return { error: "needs at least 3 weigh-ins spanning 7+ days in the last two weeks." };
+  const intake = avgKcalLast14Days();
+  if (intake == null) return { error: "needs at least 3 days of food logged in the last two weeks." };
+  const tdee = Math.min(4500, Math.max(1400, intake - KCAL_PER_KG * trend.rateKgPerWeek));
+  const desired = AUTO_GOAL_RATE[normalizeGoalType(settings.goalType)];
+  let target = tdee + KCAL_PER_KG * desired;
+  target = Math.min(6000, Math.max(1200, target));
+  target = Math.min(tdee * 1.2, Math.max(tdee * 0.8, target));
+  const current = settings.goals.kcal;
+  if (current && current > 0) {
+    target = Math.min(current * 1.2, Math.max(current * 0.8, target));
+  }
+  return {
+    kcal: Math.round(target / 10) * 10,
+    tdee: Math.round(tdee),
+    intake: Math.round(intake),
+    rate: Math.round(trend.rateKgPerWeek * 100) / 100,
+  };
+}
+
+/* Runs after every data change (and at boot). Does nothing unless Automatic
+   is on, and recalculates at most once per day so daily weight noise can't
+   make the goal bounce around. */
+function maybeAutoAdjust() {
+  if (!settings.autoAdjust) return;
+  if (settings.autoAdjustLast === todayIso()) {
+    if (settings.autoAdjustNote) autoAdjustStatus.textContent = settings.autoAdjustNote;
     return;
   }
-  settings.goals.kcal = defaults.kcal;
-  settings.goals.protein = defaults.protein;
-  settings.goals.carbs = defaults.carbs;
-  settings.goals.fat = defaults.fat;
-  settings.goals.weight = targetWeightFrom(w, goalTypeSelect.value);
-  syncGoalInputs();
+  const res = computeAutoAdjustment();
+  if (res.error) {
+    autoAdjustStatus.textContent = `Automatic is on, but not adjusting yet — ${res.error}`;
+    return;
+  }
+  settings.goals.kcal = res.kcal;
+  recalcMacrosFromKcal();
+  goalKcal.value = res.kcal;
+  settings.autoAdjustLast = todayIso();
+  settings.autoAdjustNote =
+    `Adjusted kcal goal to ${res.kcal} — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
   saveSettings();
   renderTotals();
+  autoAdjustStatus.textContent = settings.autoAdjustNote;
+}
+
+autoAdjustToggle.addEventListener("change", () => {
+  settings.autoAdjust = autoAdjustToggle.checked;
+  settings.autoAdjustLast = null;
+  saveSettings();
+  if (settings.autoAdjust) {
+    maybeAutoAdjust();
+  } else {
+    autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
+  }
 });
 toggleKeyVis.addEventListener("click", () => {
   const show = apiKeyInput.type === "password";
@@ -2092,8 +2197,6 @@ importFile.addEventListener("change", () => {
         ? "Import will replace all current log data and settings (including the OpenRouter API key). Continue?"
         : "Import will replace all current log data. Continue?";
       if (!confirm(msg)) return;
-      db.days = parsed.days;
-      saveDB();
       if (hasSettings) {
         settings.apiKey = parsed.settings.apiKey || "";
         settings.model = resolveModel(parsed.settings.model, parsed.settings.defaultModelSeen);
@@ -2103,6 +2206,9 @@ importFile.addEventListener("change", () => {
         settings.gender = normalizeGender(parsed.settings.gender);
         settings.height = numOrNull(parsed.settings.height);
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
+        settings.autoAdjust = parsed.settings.autoAdjust === true;
+        settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" ? parsed.settings.autoAdjustLast : null;
+        settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -2110,7 +2216,10 @@ importFile.addEventListener("change", () => {
         syncGoalInputs();
         syncAiAnalyzeButton();
         setAddMode(settings.apiKey ? "ai" : "manual");
+        autoAdjustToggle.checked = settings.autoAdjust;
       }
+      db.days = parsed.days;
+      saveDB();
       currentDate = todayIso();
       render();
       alert("Import complete.");
@@ -2137,6 +2246,9 @@ clearBtn.addEventListener("click", () => {
     gender: "",
     height: null,
     defaultModelSeen: DEFAULT_MODEL,
+    autoAdjust: false,
+    autoAdjustLast: null,
+    autoAdjustNote: null,
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -2146,6 +2258,8 @@ clearBtn.addEventListener("click", () => {
   apiKeyInput.value = "";
   modelInput.value = DEFAULT_MODEL;
   goalTypeSelect.value = "maintain";
+  autoAdjustToggle.checked = false;
+  autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   syncGoalInputs();
   syncAiAnalyzeButton();
   setAddMode("manual");
@@ -2209,6 +2323,11 @@ onboardStart.addEventListener("click", () => {
   if (!profile.age || profile.age <= 0) {
     onboardPreview.textContent = "Please fill in your age first.";
     onboardAge.focus();
+    return;
+  }
+  if (!profile.gender) {
+    onboardPreview.textContent = "Please select your gender.";
+    onboardGender.focus();
     return;
   }
   ensureDay(todayIso()).weight = profile.weightKg;
