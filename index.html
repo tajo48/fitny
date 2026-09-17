@@ -2237,10 +2237,15 @@ function applyAutoMacros(kcal, weightKg) {
   // Never let protein alone exceed the kcal goal.
   protein = Math.min(protein, Math.floor(kcal / 4));
   const remaining = Math.max(0, kcal - protein * 4);
-  const carbKcalShare = (split.carbs * 4) / (split.carbs * 4 + split.fat * 9);
-  const carbs = Math.round((remaining * carbKcalShare) / 4);
+  // The split values are fractions of kcal, so carbs gets its share of the
+  // leftover kcal by its fraction alone (no 4/9 kcal-per-gram weighting —
+  // that would treat them as gram ratios and hand fat nearly half the
+  // calories).
+  const carbKcalShare = split.carbs / (split.carbs + split.fat);
+  // Floor (not round) so carbs can't overshoot and crowd fat out entirely.
+  const carbs = Math.floor((remaining * carbKcalShare) / 4);
   // Fat fills in whatever's left so the macros always sum to the kcal goal.
-  const fat = Math.max(0, Math.round((kcal - protein * 4 - carbs * 4) / 9));
+  const fat = Math.round((kcal - protein * 4 - carbs * 4) / 9);
   g.protein = protein;
   g.carbs = carbs;
   g.fat = fat;
