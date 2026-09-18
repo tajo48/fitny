@@ -158,6 +158,10 @@
   .daybar button { padding: 8px 14px 6px; }
   #todayBtn.current { background: #8caaee; color: #292c3c; border-color: #8caaee; }
 
+  /* day summary export actions — footer strip inside the totals card */
+  .dayActions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #414559; }
+  .dayActions button { flex: 1 1 0; }
+
   .weightcard { display: flex; flex-direction: column; gap: 6px; }
   .weightcardRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
   .weightcardRow label { font-size: 14px; color: #a5adce; }
@@ -169,16 +173,19 @@
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
   .totalsKcalGoal { font-size: 15px; color: #a5adce; }
-  /* One shared grid for every stat row (kcal, protein, carbs, fat, GI) so
-     their label columns — and therefore every bar — line up at the same x
-     position, no matter how long each row's label text is. Each row is a
-     `display: contents` wrapper so its label + bar become direct grid items
-     instead of nesting their own box. */
+  /* One shared grid for every stat row (kcal, protein, carbs, fat, GI): the
+     label column sizes to its widest content and every bar starts right
+     after it, filling to the card's right edge — the exact pre-share look,
+     with every bar starting at the same x and ending at the same length.
+     Columns are placed explicitly (grid-column 1 / 2), so a row whose goal
+     is blank simply leaves an empty slot — it can never shove the following
+     bars into the narrow label column the way the old implicit placement
+     did. */
   .macroLegend { display: grid; grid-template-columns: max-content 1fr; align-items: center; column-gap: 10px; row-gap: 10px; font-size: 12px; color: #c6d0f5; }
   .macroLegend .dot, .itemMacros .dot, .historyRow .dot, .giGaugeLabel .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
   .macroRow { display: contents; }
-  .macroRowLabel { display: flex; align-items: center; white-space: nowrap; }
-  .macroRow .progressBar { margin-bottom: 0; }
+  .macroRowLabel { grid-column: 1; display: flex; align-items: center; white-space: nowrap; }
+  .macroRow .progressBar { grid-column: 2; margin-bottom: 0; }
 
   /* Goal-progress bar: fills toward the goal, then turns red and rescales
      past 100% instead of clipping flush with the edge. The colored fill is
@@ -193,14 +200,13 @@
 
   /* Glycemic-index gauge: fixed low/medium/high bands with a marker for
      today's carb-weighted average — same track/marker split as the goal
-     bars above, so the marker is exactly as visible, and the same grid row
-     shape as the bars above so it lines up with them too. */
+     bars above, and in the same two columns so it lines up with them. */
   .giGaugeWrap { display: contents; }
-  .giGauge { position: relative; width: 100%; }
+  .giGaugeLabel { grid-column: 1; display: flex; align-items: center; white-space: nowrap; }
+  .giGauge { grid-column: 2; position: relative; width: 100%; }
   .giTrack { display: flex; height: 8px; border-radius: 999px; overflow: hidden; }
   .giZone { display: block; height: 100%; }
   .giMarker { position: absolute; top: -3px; bottom: -3px; width: 3px; border-radius: 2px; background: #ffffff; transform: translateX(-50%); box-shadow: 0 0 0 1px #232634; }
-  .giGaugeLabel { display: flex; align-items: center; white-space: nowrap; }
 
   .mealsWrap { display: flex; flex-direction: column; gap: 10px; width: 100%; }
   .mealCard { padding: 12px 14px; }
@@ -625,7 +631,7 @@
 
       <div class="card">
         <h3 style="margin-bottom:8px;">Daily goals</h3>
-        <p class="hint" style="margin-bottom:10px;">Leave any field blank to hide it from the Log tab's progress bars. Kcal and protein/carbs/fat stay in sync (4 / 4 / 9 kcal per gram): editing a macro recalculates kcal, and editing kcal rescales the macros to match.</p>
+        <p class="hint" style="margin-bottom:10px;">Leave a field blank to hide its bar from the Log tab's progress list (the kcal row always keeps its track). Kcal and protein/carbs/fat stay in sync (4 / 4 / 9 kcal per gram): editing a macro recalculates kcal, and editing kcal rescales the macros to match.</p>
         <div class="row">
           <div class="field"><label for="goalKcal">Kcal</label><input type="number" id="goalKcal" inputmode="decimal" min="0" placeholder="e.g. 2000"></div>
           <div class="field"><label for="goalProtein">Protein (g)</label><input type="number" id="goalProtein" inputmode="decimal" min="0"></div>
@@ -742,14 +748,14 @@ const KCAL_PER_KG_PER_DAY = KCAL_PER_KG / 7;
 /* Macro split per goal (fractions of kcal) for Automatic mode. Each goal
    gets its own proportions: lose/recomp skew high-protein to protect
    muscle, maintain is a classic 30/40/30, gain skews toward carbs for
-   training fuel. Protein also gets a floor of 1.6 g per kg of body weight. */
+   training fuel. Protein also gets a floor of 2 g per kg of body weight. */
 const AUTO_MACRO_SPLIT = {
   lose:     { protein: 0.35, carbs: 0.30, fat: 0.35 },
   maintain: { protein: 0.30, carbs: 0.40, fat: 0.30 },
   recomp:   { protein: 0.35, carbs: 0.35, fat: 0.30 },
   gain:     { protein: 0.25, carbs: 0.50, fat: 0.25 },
 };
-const AUTO_PROTEIN_PER_KG = 1.6;
+const AUTO_PROTEIN_PER_KG = 2;
 /* Days below this kcal total are almost certainly not fully logged (e.g. a
    single snack), so they're excluded from the average — counting them as
    full eating days would systematically drag the estimated intake down. */
@@ -790,7 +796,7 @@ function computeDefaultGoals({ weightKg, goalType, age, gender, height } = {}) {
     ? bmrMifflinStJeor(w, h, a, gender) * ACTIVITY_MULTIPLIER
     : w * MAINTENANCE_KCAL_PER_KG;
   const kcal = Math.round(maintenanceKcal * GOAL_KCAL_FACTOR[normalizeGoalType(goalType)]);
-  const protein = Math.round(w * 1.8);
+  const protein = Math.round(w * 2);
   const fat = Math.round(w * 0.8);
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
   const kcalFromMacros = protein * 4 + carbs * 4 + fat * 9;
@@ -1059,9 +1065,13 @@ syncAiAnalyzeButton();
 /* A goal-progress bar that keeps working past 100%: instead of clipping flush
    with the edge (indistinguishable from being exactly on target), it turns
    red and rescales its own width so the overshoot stays visible, with a thin
-   marker line showing exactly where the goal itself sits. */
-function progressBarHtml(value, goal, color) {
-  if (!goal) return "";
+   marker line showing exactly where the goal itself sits. With `alwaysTrack`
+   (used for the kcal row), the track renders even with no goal set — an
+   empty bar — so the overview always shows the row. */
+function progressBarHtml(value, goal, color, alwaysTrack = false) {
+  if (!goal) {
+    return alwaysTrack ? `<div class="progressBar"><div class="progressTrack"></div></div>` : "";
+  }
   const pct = (value / goal) * 100;
   const over = pct > 100;
   const scaleMax = Math.max(100, pct + 5);
@@ -1082,12 +1092,14 @@ function progressBarHtml(value, goal, color) {
   `;
 }
 
-function macroRowHtml(label, color, value, goal, unit = "g") {
+/* Each stat row: the label with its value (and goal) on the left, the
+   goal bar filling the rest of the row to the right. */
+function macroRowHtml(label, color, value, goal, unit = "g", alwaysTrack = false) {
   const suffix = goal ? ` / ${goal} ${unit}` : ` ${unit}`;
   return `
     <div class="macroRow">
       <span class="macroRowLabel"><i class="dot" style="background:${color}"></i>${label} ${value.toFixed(0)}${suffix}</span>
-      ${progressBarHtml(value, goal, color)}
+      ${progressBarHtml(value, goal, color, alwaysTrack)}
     </div>
   `;
 }
@@ -1147,11 +1159,16 @@ function renderTotals() {
       ${kcalRight}
     </div>
     <div class="macroLegend">
-      ${macroRowHtml("Kcal", "#8caaee", t.kcal, g.kcal, "kcal")}
+      ${macroRowHtml("Kcal", "#8caaee", t.kcal, g.kcal, "kcal", true)}
       ${macroRowHtml("Protein", "#a6d189", t.protein, g.protein)}
       ${macroRowHtml("Carbs", "#e78284", t.carbs, g.carbs)}
       ${macroRowHtml("Fat", "#e5c890", t.fat, g.fat)}
       ${giGaugeHtml(t.avgGI)}
+    </div>
+    <div class="dayActions">
+      <button type="button" id="saveDay">Save PNG</button>
+      <button type="button" id="copyDay">Copy</button>
+      <button type="button" id="shareDay"${!canShareFiles ? " hidden" : ""}>Share</button>
     </div>
   `;
 }
@@ -1224,6 +1241,587 @@ nextDayBtn.addEventListener("click", () => { currentDate = shiftDate(currentDate
 todayBtn.addEventListener("click", () => { currentDate = todayIso(); applyDefaultMealSelects(); render(); });
 dateInput.addEventListener("change", () => {
   if (dateInput.value) { currentDate = dateInput.value; applyDefaultMealSelects(); render(); }
+});
+
+/* ============================================================
+   Share — day summary card
+   ============================================================ */
+
+/* "Share" juggles two paths: when the platform can share image files
+   (installed PWA, or desktop Chrome/Edge), it renders the day's summary
+   card and hands the PNG to the system share sheet together with a stats
+   caption; otherwise (or if the sheet fails) it falls back to a plain
+   download of the same PNG. */
+
+/* The action buttons live inside the totals card (renderTotals builds them
+   on every render); one delegated listener serves all three. */
+const canShareFiles = (() => {
+  if (typeof navigator.share !== "function" || typeof navigator.canShare !== "function" || typeof File === "undefined") return false;
+  try {
+    return navigator.canShare({ files: [new File(["x"], "x.png", { type: "image/png" })] });
+  } catch {
+    return false;
+  }
+})();
+if (document.fonts) document.fonts.load('88px "Bebas Neue"').catch(() => {});
+
+const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+function dayLabel(iso) {
+  const d = isoToDate(iso);
+  return WEEKDAYS[d.getDay()] + ", " + MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear();
+}
+
+function dayShareFileName() {
+  const t = totalsFor(currentDate);
+  return "Fitny_" + currentDate + "_" + Math.round(t.kcal) + "kcal.png";
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/* Goal-progress bar matching the page's look: fills toward the goal, then
+   the overshoot turns red and rescales instead of clipping; the white
+   marker shows exactly where the goal sits. */
+function summaryBar(ctx, x, y, w, value, goal, color) {
+  if (!goal) return; // mirrors the page: no goal → no bar at all
+  const h = 12;
+  ctx.fillStyle = "#414559";
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  const pct = (value / goal) * 100;
+  const over = pct > 100;
+  const scaleMax = Math.max(100, pct + 5);
+  const fillPct = Math.min(100, (pct / scaleMax) * 100);
+  const goalPct = (100 / scaleMax) * 100;
+  const basePct = over ? goalPct : fillPct;
+  const overPct = over ? fillPct - goalPct : 0;
+  if (basePct > 0) {
+    roundRect(ctx, x, y, (w * basePct) / 100, h, h / 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  if (overPct > 0) {
+    ctx.fillStyle = "#e78284";
+    ctx.fillRect(x + (w * goalPct) / 100, y, (w * overPct) / 100, h);
+  }
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(x + (w * goalPct) / 100 - 1.5, y - 3, 3, h + 6);
+}
+
+/* Weight entries on [fromIso, toIso] (both inclusive), oldest first —
+   feeds the week / month sparkline chips on the export card. */
+function weightPoints(fromIso, toIso) {
+  const pts = [];
+  for (const date of Object.keys(db.days)) {
+    if (date >= fromIso && date <= toIso && typeof db.days[date].weight === "number") {
+      pts.push({ date, w: db.days[date].weight });
+    }
+  }
+  pts.sort((a, b) => (a.date < b.date ? -1 : 1));
+  return pts;
+}
+
+function weekStartIso(iso) {
+  const d = isoToDate(iso);
+  return dateToIso(new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7)));
+}
+
+function monthStartIso(iso) {
+  const d = isoToDate(iso);
+  return dateToIso(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+
+/* Least-squares fit of body weight over the 14 days ending at `iso` →
+   kg/week trend. The fit resists single-day water-weight noise better
+   than comparing two snapshots, and needs 3+ weigh-ins spread over 7+
+   days to be meaningful. The export card uses this (instead of the
+   today-based variant) so the ETA is part of the same snapshot. */
+function weightTrendEndingAt(iso) {
+  const cutoff = shiftDate(iso, -14);
+  const entries = weightEntries().filter((e) => e.date >= cutoff && e.date <= iso);
+  if (entries.length < 3) return null;
+  const t0 = isoToDate(entries[0].date).getTime() / 86400000;
+  const t1 = isoToDate(entries[entries.length - 1].date).getTime() / 86400000;
+  if (t1 - t0 < 7) return null;
+  let sx = 0, sy = 0, sxy = 0, sxx = 0;
+  const n = entries.length;
+  for (const e of entries) {
+    const x = isoToDate(e.date).getTime() / 86400000;
+    sx += x; sy += e.weight; sxy += x * e.weight; sxx += x * x;
+  }
+  const slopePerDay = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  /* pts = the exact weight series the fit used, for the ETA chip sparkline */
+  return { rateKgPerWeek: slopePerDay * 7, pts: entries.map((e) => ({ w: e.weight })) };
+}
+
+function etaLabel(wks) {
+  const days = wks * 7;
+  if (days <= 21) return "~" + Math.round(days) + (Math.round(days) === 1 ? " DAY" : " DAYS");
+  if (wks < 9) { const n = Math.round(wks); return "~" + n + (n === 1 ? " WK" : " WKS"); }
+  const m = Math.round(wks / 4.345);
+  if (m < 12) return "~" + m + (m === 1 ? " MTH" : " MTHS");
+  const yrs = Math.round(wks / 52);
+  return "~" + yrs + (yrs === 1 ? " YR" : " YRS");
+}
+
+/* Goal-ETA box under the THIS MONTH chip: the same 148×68 rounded frame
+   as the week / month side boxes — muted header row, colored headline,
+   mini trend sparkline — so the stats row stays uniform. The sparkline
+   plots the same 14-day window the ETA is computed from. The headline
+   auto-shrinks only when a long state like GOAL REACHED would otherwise
+   spill past the frame. */
+function drawEtaBox(ctx, x, y, w, h, headline, goalStr, color, pts) {
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = "#292c3c";
+  ctx.fill();
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#414559";
+  ctx.stroke();
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText("GOAL ETA", x + 12, y + 10);
+  ctx.letterSpacing = "0px";
+
+  ctx.textAlign = "right";
+  ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText(goalStr, x + w - 12, y + 10);
+  ctx.letterSpacing = "0px";
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = color;
+  let size = 22;
+  ctx.font = size + "px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  while (ctx.measureText(headline).width > w - 24 && size > 12) {
+    size -= 1;
+    ctx.font = size + "px 'Bebas Neue', Impact, sans-serif";
+  }
+  ctx.fillText(headline, x + w / 2, y + 30);
+  ctx.letterSpacing = "0px";
+
+  /* mini weight sparkline — same as the week / month chips */
+  if (pts.length < 2) return;
+  const sx = x + 10, sw = w - 20, sy = y + 42, sh = 19;
+  let min = Infinity, max = -Infinity;
+  for (const p of pts) { if (p.w < min) min = p.w; if (p.w > max) max = p.w; }
+  const rng = max - min;
+  if (rng > 0) { min -= rng * 0.1; max += rng * 0.1; }
+  const xt = (i) => sx + (sw * i) / (pts.length - 1);
+  const yt = (v) => (max === min ? sy + sh / 2 : sy + sh - ((v - min) / (max - min)) * sh);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(xt(0), yt(pts[0].w));
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(xt(i), yt(pts[i].w));
+  ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(xt(pts.length - 1), yt(pts[pts.length - 1].w), 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* Green when the change moves toward the goal type, red when away,
+   gray for maintain / recomp / no data. */
+function trendColor(delta) {
+  const g = settings.goalType;
+  if (delta == null || delta === 0 || (g !== "lose" && g !== "gain")) return "#a5adce";
+  const good = g === "lose" ? delta < 0 : delta > 0;
+  return good ? "#a6d189" : "#e78284";
+}
+
+/* A quiet chip with label + top (highest) weight of the window in the
+   header row, the signed KG change as the headline, and a mini sparkline
+   — frames the kcal headline on either side. `color` tints both the
+   change and the line (green = toward the goal, red = away, gray =
+   neutral or unknown). */
+function drawSideBox(ctx, x, y, w, h, label, value, pts, color) {
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = "#292c3c";
+  ctx.fill();
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#414559";
+  ctx.stroke();
+
+  /* header row: label left, top weight of the window right */
+  const top = pts.length ? "MAX " + Math.max(...pts.map((p) => p.w)).toFixed(1) : "";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText(label, x + 12, y + 10);
+  ctx.letterSpacing = "0px";
+  if (top) {
+    ctx.textAlign = "right";
+    ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+    ctx.letterSpacing = "1px";
+    ctx.fillText(top, x + w - 12, y + 10);
+    ctx.letterSpacing = "0px";
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = color;
+  ctx.font = "22px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText(value, x + w / 2, y + 30);
+  ctx.letterSpacing = "0px";
+
+  /* mini weight sparkline — flat line centered when all values match */
+  if (pts.length < 2) return;
+  const sx = x + 10, sw = w - 20, sy = y + 42, sh = 19;
+  let min = Infinity, max = -Infinity;
+  for (const p of pts) { if (p.w < min) min = p.w; if (p.w > max) max = p.w; }
+  const rng = max - min;
+  if (rng > 0) { min -= rng * 0.1; max += rng * 0.1; }
+  const xt = (i) => sx + (sw * i) / (pts.length - 1);
+  const yt = (v) => (max === min ? sy + sh / 2 : sy + sh - ((v - min) / (max - min)) * sh);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(xt(0), yt(pts[0].w));
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(xt(i), yt(pts[i].w));
+  ctx.stroke();
+  /* dot on the latest entry */
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(xt(pts.length - 1), yt(pts[pts.length - 1].w), 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/* A 620-wide "what happened today" card in the app's Catppuccin look:
+   header with icon + date, kcal headline flanked by week / month weight
+   chips (top weight + KG change + sparkline), goal-ETA box tucked under
+   month chip in the same frame and with the same trend sparkline,
+   optional weight chip, goal bars, GI
+   gauge, meal split, footer credit. The
+   caller paints the background (full-bleed card) and scales the context
+   2×; the height returned is the used space, measured by a 1x probe pass
+   so the export is exactly the card — and drawn at native 2x so text
+   never gets rasterized soft. */
+function drawDaySummary(ctx) {
+  const day = getDay(currentDate);
+  const t = totalsFor(currentDate);
+  const g = settings.goals || emptyGoals();
+  const L = 40, R = 580, W = 620;
+  let y = 40;
+
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.letterSpacing = "0px";
+
+  /* header: icon + wordmark + date */
+  roundRect(ctx, L, y, 64, 64, 14);
+  ctx.fillStyle = "#292c3c";
+  ctx.fill();
+  roundRect(ctx, L, y, 64, 64, 14);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#51576d";
+  ctx.stroke();
+  ctx.fillStyle = "#8caaee";
+  ctx.font = "42px 'Bebas Neue', Impact, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("F", L + 32, y + 33);
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#8caaee";
+  ctx.font = "42px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText("FITNY", L + 82, y + 22);
+  ctx.letterSpacing = "4px";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "16px 'Bebas Neue', Impact, sans-serif";
+  ctx.fillText("DAILY SUMMARY", L + 82, y + 49);
+  ctx.letterSpacing = "0px";
+
+  const d = isoToDate(currentDate);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#c6d0f5";
+  ctx.font = "27px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText(WEEKDAYS[d.getDay()], R, y + 20);
+  ctx.letterSpacing = "0px";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "14px Verdana, 'DejaVu Sans', sans-serif";
+  ctx.fillText(MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(), R, y + 46);
+
+  y += 88;
+  ctx.strokeStyle = "#414559";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(L, y);
+  ctx.lineTo(R, y);
+  ctx.stroke();
+  y += 36;
+
+  /* kcal headline, flanked by week / month weight-change chips */
+  const wk = weightPoints(weekStartIso(currentDate), currentDate);
+  const mo = weightPoints(monthStartIso(currentDate), currentDate);
+  const deltaOf = (pts) => (pts.length > 1 ? pts[pts.length - 1].w - pts[0].w : null);
+  const wkD = deltaOf(wk), moD = deltaOf(mo);
+  const deltaVal = (d) => (d == null ? "—" : (d > 0 ? "+" : "") + d.toFixed(1) + " KG");
+  drawSideBox(ctx, L, y + 6, 148, 68, "THIS WEEK", deltaVal(wkD), wk, trendColor(wkD));
+  drawSideBox(ctx, R - 148, y + 6, 148, 68, "THIS MONTH", deltaVal(moD), mo, trendColor(moD));
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#c6d0f5";
+  ctx.font = "88px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText(Math.round(t.kcal).toString(), W / 2, y + 40);
+  ctx.letterSpacing = "0px";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "20px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  /* center the goal words under the number, not the leading "/ " */
+  const goalLabel = g.kcal ? "/ " + Math.round(g.kcal) + " KCAL GOAL" : "KCAL";
+  ctx.fillText(goalLabel, W / 2 + (g.kcal ? ctx.measureText("/ ").width / 2 : 0), y + 92);
+  ctx.letterSpacing = "0px";
+  const rowY = y;
+  y += 128;
+
+  /* goal-ETA box — how long until the weight goal at the current trend;
+     hidden until the 14-day trend is meaningful; green when the trend
+     heads toward the goal, red when it heads away. Mirrors the THIS
+     MONTH chip and sits directly under it — same frame, header layout
+     and trend sparkline. */
+  const etaTrend = weightTrendEndingAt(currentDate);
+  const goalW = g.weight;
+  const goalType = settings.goalType;
+  if (etaTrend && typeof goalW === "number" && (goalType === "lose" || goalType === "gain")) {
+    const wAll = weightEntries();
+    let lastW = null;
+    for (let i = wAll.length - 1; i >= 0; i--) {
+      if (wAll[i].date <= currentDate) { lastW = wAll[i].weight; break; }
+    }
+    if (lastW != null) {
+      const remaining = lastW - goalW;
+      const reached = (goalType === "lose" && remaining <= 0) || (goalType === "gain" && remaining >= 0);
+      const onTrack = !reached && (goalType === "lose" ? etaTrend.rateKgPerWeek < 0 : etaTrend.rateKgPerWeek > 0);
+      const goalStr = "TO " + Math.round(goalW * 10) / 10 + " KG";
+      const headline = reached
+        ? "GOAL REACHED"
+        : onTrack
+          ? etaLabel(Math.abs(remaining) / Math.abs(etaTrend.rateKgPerWeek))
+          : "OFF TRACK";
+      drawEtaBox(ctx, R - 148, rowY + 78, 148, 68, headline, goalStr, reached || onTrack ? "#a6d189" : "#e78284", etaTrend.pts);
+      y += 22; /* the box hangs below the chips — extend the block over it */
+    }
+  }
+
+  /* optional weight chip */
+  const weight = day && typeof day.weight === "number" ? day.weight : null;
+  if (weight != null) {
+    const label = "BODY WEIGHT · " + weight + " KG";
+    ctx.font = "18px 'Bebas Neue', Impact, sans-serif";
+    ctx.letterSpacing = "2px";
+    const tw = ctx.measureText(label).width + 40;
+    roundRect(ctx, W / 2 - tw / 2, y, tw, 40, 20);
+    ctx.fillStyle = "#292c3c";
+    ctx.fill();
+    roundRect(ctx, W / 2 - tw / 2, y, tw, 40, 20);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "#414559";
+    ctx.stroke();
+    ctx.fillStyle = "#a6d189";
+    ctx.textAlign = "center";
+    ctx.fillText(label, W / 2, y + 21);
+    ctx.letterSpacing = "0px";
+    y += 60;
+  } else {
+    y += 16;
+  }
+
+  /* macro rows: label + value, bar underneath */
+  ctx.textAlign = "left";
+  const macros = [
+    ["Protein", "#a6d189", t.protein, g.protein],
+    ["Carbs", "#e78284", t.carbs, g.carbs],
+    ["Fat", "#e5c890", t.fat, g.fat],
+  ];
+  for (const [label, color, value, goal] of macros) {
+    ctx.textAlign = "left"; // the value draw flips it right — reset per row
+    ctx.fillStyle = "#c6d0f5";
+    ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
+    ctx.fillText(label, L, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#a5adce";
+    ctx.fillText(
+      goal ? Math.round(value) + " / " + Math.round(goal) + " g" : Math.round(value) + " g",
+      R, y
+    );
+    summaryBar(ctx, L, y + 14, R - L, value, goal, color);
+    y += 46;
+  }
+
+  /* glycemic index gauge */
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#c6d0f5";
+  ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
+  ctx.fillText("Glycemic index", L, y);
+  ctx.textAlign = "right";
+  ctx.fillStyle = "#a5adce";
+  ctx.fillText(t.avgGI != null ? t.avgGI + " / 100" : "—", R, y);
+  const gH = 12;
+  const gy = y + 14;
+  ctx.save();
+  roundRect(ctx, L, gy, R - L, gH, gH / 2);
+  ctx.clip();
+  const zones = [[0.55, "#a6d189"], [0.15, "#e5c890"], [0.30, "#e78284"]];
+  let gx = L;
+  for (const [frac, color] of zones) {
+    ctx.fillStyle = color;
+    ctx.fillRect(gx, gy, (R - L) * frac, gH);
+    gx += (R - L) * frac;
+  }
+  ctx.restore();
+  if (t.avgGI != null) {
+    const mx = L + ((R - L) * Math.max(0, Math.min(100, t.avgGI))) / 100;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(mx - 1.5, gy - 3, 3, gH + 6);
+  }
+  y += 46;
+
+  /* meal split */
+  const cw = (R - L) / 4;
+  for (let i = 0; i < MEALS.length; i++) {
+    const meal = MEALS[i];
+    const kcal = day ? (day.meals[meal] || []).reduce((a, it) => a + num(it.kcal), 0) : 0;
+    const cx = L + cw * i + cw / 2;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#a5adce";
+    ctx.font = "15px 'Bebas Neue', Impact, sans-serif";
+    ctx.letterSpacing = "2px";
+    ctx.fillText(MEAL_LABELS[meal].toUpperCase(), cx, y);
+    ctx.letterSpacing = "0px";
+    ctx.fillStyle = "#c6d0f5";
+    ctx.font = "600 15px Verdana, 'DejaVu Sans', sans-serif";
+    ctx.fillText(Math.round(kcal) + " kcal", cx, y + 24);
+  }
+  y += 58;
+
+  /* footer */
+  y += 6;
+  ctx.strokeStyle = "#414559";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(L, y);
+  ctx.lineTo(R, y);
+  ctx.stroke();
+  y += 28;
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#8caaee";
+  ctx.font = "20px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText("FITNY · TRACK EVERY DAY", W / 2, y);
+  ctx.letterSpacing = "0px";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "13px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText("TAJO48.GITHUB.IO/FITNY", W / 2, y + 24);
+  ctx.letterSpacing = "0px";
+  y += 46;
+  return y;
+}
+
+/* Render the summary at 2x: a 1x probe pass measures the card's height
+   first, then the real pass draws straight into a 1240-wide canvas under a
+   scale(2,2) transform — crops nothing, upscales nothing, so the export is
+   crisp instead of a stretched 1x render. */
+function renderDaySummary() {
+  const probe = document.createElement("canvas");
+  probe.width = 620;
+  probe.height = 1600;
+  const yEnd = drawDaySummary(probe.getContext("2d"));
+  const H = yEnd + 20; // slack below the content
+  const out = document.createElement("canvas");
+  out.width = 1240;
+  out.height = H * 2;
+  const octx = out.getContext("2d");
+  octx.scale(2, 2);
+  /* full-bleed card, like every .card on the page, with its 2px frame */
+  octx.fillStyle = "#303446";
+  octx.fillRect(0, 0, 620, H);
+  roundRect(octx, 10, 10, 600, H - 20, 16);
+  octx.strokeStyle = "#51576d";
+  octx.lineWidth = 2;
+  octx.stroke();
+  drawDaySummary(octx);
+  return out;
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function daySummaryBlob() {
+  return new Promise((res) => renderDaySummary().toBlob(res, "image/png"));
+}
+
+/* Brief button-text feedback for actions the page has no other way to
+   announce (no toast/flash system here). */
+function pingBtn(btn, msg) {
+  const old = btn.textContent;
+  btn.textContent = msg;
+  setTimeout(() => { btn.textContent = old; }, 1500);
+}
+
+/* One delegated listener for the totals-card action strip: Save / Copy /
+   Share the summary image. */
+totalsEl.addEventListener("click", async (e) => {
+  const btn = e.target.closest("#saveDay, #copyDay, #shareDay");
+  if (!btn) return;
+  if (btn.id === "saveDay") {
+    downloadBlob(await daySummaryBlob(), dayShareFileName());
+    return;
+  }
+  if (btn.id === "copyDay") {
+    try {
+      const blob = await daySummaryBlob();
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      pingBtn(btn, "Copied!");
+    } catch {
+      // Image clipboard writes need a secure context (https, localhost or
+      // an installed PWA). Over plain-http LAN the API doesn't exist, so
+      // there is no image to copy — say so instead of silently degrading
+      // to a download or a text snippet.
+      pingBtn(btn, "Needs https");
+    }
+    return;
+  }
+  /* share */
+  const blob = await daySummaryBlob();
+  try {
+    await navigator.share({
+      files: [new File([blob], dayShareFileName(), { type: "image/png" })],
+      title: "Fitny — " + dayLabel(currentDate),
+    });
+  } catch (err) {
+    if (err.name === "AbortError") return; // sheet dismissed — do nothing
+    // any other share failure → plain download of the same image
+    downloadBlob(blob, dayShareFileName());
+  }
 });
 
 /* ---------- weight input ---------- */
@@ -2143,27 +2741,10 @@ function avgKcalLast14Days() {
   return count >= 3 ? sum / count : null;
 }
 
-/* Least-squares fit of body weight over the last two weeks → kg/week trend.
-   The fit resists single-day water-weight noise better than comparing two
-   snapshots, and needs 3+ weigh-ins spread over 7+ days to be meaningful. */
+/* Least-squares fit of body weight over the last two weeks → kg/week
+   trend (see weightTrendEndingAt). */
 function weightTrendLast14Days() {
-  const cutoff = shiftDate(todayIso(), -14);
-  const entries = weightEntries().filter((e) => e.date >= cutoff);
-  if (entries.length < 3) return null;
-  const t0 = isoToDate(entries[0].date).getTime() / 86400000;
-  const t1 = isoToDate(entries[entries.length - 1].date).getTime() / 86400000;
-  if (t1 - t0 < 7) return null;
-  let sx = 0, sy = 0, sxy = 0, sxx = 0;
-  const n = entries.length;
-  for (const e of entries) {
-    const x = isoToDate(e.date).getTime() / 86400000;
-    sx += x;
-    sy += e.weight;
-    sxy += x * e.weight;
-    sxx += x * x;
-  }
-  const slopePerDay = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-  return { rateKgPerWeek: slopePerDay * 7 };
+  return weightTrendEndingAt(todayIso());
 }
 
 /* Turns "what actually happened" (intake + weight trend) into a new kcal
@@ -2224,16 +2805,18 @@ function latestWeightKg() {
 }
 
 /* Sets protein/carbs/fat goals for a new kcal goal using the goal's own
-   macro split, with a protein floor of 1.6 g/kg so muscle is protected on
-   a cut and supported on a bulk. Carbs take their share of what's left
-   after protein, and fat fills in the remainder so the macros always sum
-   to the kcal goal. */
+   macro split, with a protein floor of 2 g/kg (double body mass, in
+   grams) so muscle is protected on a cut and supported on a bulk. Carbs
+   take their share of what's left after protein, and fat fills in the
+   remainder so the macros always sum to the kcal goal. */
 function applyAutoMacros(kcal, weightKg) {
   const g = settings.goals;
   const split = AUTO_MACRO_SPLIT[normalizeGoalType(settings.goalType)] || AUTO_MACRO_SPLIT.maintain;
   let protein = Math.round((kcal * split.protein) / 4);
   const w = Number(weightKg);
-  if (Number.isFinite(w) && w > 0) protein = Math.max(protein, Math.round(w * AUTO_PROTEIN_PER_KG));
+  // In Automatic mode protein is exactly double body mass (2 g/kg), not
+  // just a floor — the kcal split must not push it higher.
+  if (Number.isFinite(w) && w > 0) protein = Math.round(w * AUTO_PROTEIN_PER_KG);
   // Never let protein alone exceed the kcal goal.
   protein = Math.min(protein, Math.floor(kcal / 4));
   const remaining = Math.max(0, kcal - protein * 4);

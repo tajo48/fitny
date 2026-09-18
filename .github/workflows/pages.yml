@@ -27,6 +27,9 @@ jobs:
         with:
           enablement: true
 
+      - name: Stamp service worker version (last commit)
+        run: sed -i "s/@@VERSION@@/${{ github.sha }}/" sw.js
+
       - name: Assemble site
         run: |
           mkdir -p _site

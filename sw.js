@@ -6,7 +6,10 @@
    requests are cached as they happen. All paths are relative, so the worker
    works at any URL depth. */
 
-const VERSION = "23";
+/* @@VERSION@@ is stamped at build time — GitHub Actions replaces it with the
+   commit sha, and the local dev server with a hash of the served assets — so
+   every deploy/rebuild produces a fresh cache and activate cleans up the old. */
+const VERSION = "@@VERSION@@";
 const CORE = "fitny-core-" + VERSION;
 const FONTS = "fitny-fonts-" + VERSION;
 
