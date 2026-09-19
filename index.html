@@ -626,7 +626,7 @@
             </select>
           </div>
         </div>
-        <p class="hint">Used by Automatic mode's static estimate (Mifflin-St Jeor) until you have enough logged data for a personalized target. Body weight edits the day currently selected on the Log tab.</p>
+        <p class="hint">Shows your current body weight: the average of the last 7 days of weigh-ins (looking further back one day at a time until 3 weigh-ins are found, or your start-screen weight if none exist). Editing it logs a weigh-in for the day selected on the Log tab. Also used by Automatic mode's static estimate (Mifflin-St Jeor) until you have enough logged data for a personalized target.</p>
       </div>
 
       <div class="card">
@@ -838,10 +838,11 @@ function loadSettings() {
       const age = numOrNull(parsed.age);
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
+      const startWeight = numOrNull(parsed.startWeight);
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -1224,7 +1225,8 @@ function render() {
   todayBtn.classList.toggle("current", currentDate === todayIso());
   const day = getDay(currentDate);
   weightInput.value = day && typeof day.weight === "number" ? day.weight : "";
-  profileWeight.value = weightInput.value;
+  const cbw = currentBodyWeight();
+  profileWeight.value = cbw != null ? cbw : "";
   renderTotals();
   renderMeals();
   renderWeightGoalHint();
@@ -2355,6 +2357,21 @@ function weightEntries() {
     .map((d) => ({ date: d, weight: db.days[d].weight }));
 }
 
+/* Current body weight = average of the weigh-ins in the last 7 days. If the
+   last 7 days contain fewer than 3 weigh-ins, the window slides back one
+   day at a time over all records until it covers 3 (or runs out of records,
+   in which case everything found is averaged). With no weigh-in at all, the
+   weight entered on the start screen is used. */
+function currentBodyWeight() {
+  const entries = weightEntries().filter((e) => e.date <= todayIso());
+  if (!entries.length) return settings.startWeight;
+  const cutoff = shiftDate(todayIso(), -6);
+  let inWindow = entries.filter((e) => e.date >= cutoff);
+  if (inWindow.length < 3) inWindow = entries.slice(-3);
+  const sum = inWindow.reduce((a, e) => a + e.weight, 0);
+  return Math.round((sum / inWindow.length) * 10) / 10;
+}
+
 function dayItemCount(dateStr) {
   const day = getDay(dateStr);
   if (!day) return 0;
@@ -2778,16 +2795,14 @@ function computeAutoAdjustment() {
 
 /* Static fallback for Automatic mode when there isn't enough logged data
    for a personalized TDEE estimate yet: same formula the old Autofill
-   button used — latest logged weight (or whatever's typed in the weight
-   input), goal type, and profile → kcal/protein/carbs/fat plus a target
-   weight. The goal weight is deliberately never used as the current
-   weight here. */
+   button used — current body weight (7-day average, start-screen fallback),
+   goal type, and profile → kcal/protein/carbs/fat plus a target weight.
+   The goal weight is deliberately never used as the current weight here. */
 function staticGoalEstimate() {
-  const entries = weightEntries();
   // Never treat the goal weight as the current weight — for "lose" the goal
   // is already ~10% lower, and GOAL_KCAL_FACTOR would then apply the deficit
   // a second time on top of it.
-  const w = entries.length ? entries[entries.length - 1].weight : numOrNull(weightInput.value);
+  const w = currentBodyWeight() ?? numOrNull(weightInput.value);
   const defaults = computeDefaultGoals({
     weightKg: w,
     goalType: settings.goalType,
@@ -2796,12 +2811,7 @@ function staticGoalEstimate() {
     height: settings.height,
   });
   if (!defaults) return null;
-  return { ...defaults, weightKg: w, weight: entries.length ? targetWeightFrom(w, settings.goalType) : null };
-}
-
-function latestWeightKg() {
-  const entries = weightEntries();
-  return entries.length ? entries[entries.length - 1].weight : null;
+  return { ...defaults, weightKg: w, weight: w != null ? targetWeightFrom(w, settings.goalType) : null };
 }
 
 /* Sets protein/carbs/fat goals for a new kcal goal using the goal's own
@@ -2851,9 +2861,12 @@ function maybeAutoAdjust() {
   }
   const res = computeAutoAdjustment();
   if (!res.error) {
+    const w = currentBodyWeight();
     settings.goals.kcal = res.kcal;
-    applyAutoMacros(res.kcal, latestWeightKg());
-    goalKcal.value = res.kcal;
+    applyAutoMacros(res.kcal, w);
+    if (w != null) settings.goals.weight = targetWeightFrom(w, settings.goalType);
+    syncGoalInputs();
+    renderWeightGoalHint();
     settings.autoAdjustLast = todayIso();
     settings.autoAdjustNote =
       `Adjusted to ${res.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
@@ -2871,6 +2884,7 @@ function maybeAutoAdjust() {
   applyAutoMacros(fallback.kcal, fallback.weightKg);
   if (fallback.weight != null) settings.goals.weight = fallback.weight;
   syncGoalInputs();
+  renderWeightGoalHint();
   settings.autoAdjustNote =
     `Static estimate: ${fallback.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
   saveSettings();
@@ -2955,6 +2969,7 @@ function handleImportFile(file) {
         settings.age = numOrNull(parsed.settings.age);
         settings.gender = normalizeGender(parsed.settings.gender);
         settings.height = numOrNull(parsed.settings.height);
+        settings.startWeight = numOrNull(parsed.settings.startWeight);
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
         settings.autoAdjust = parsed.settings.autoAdjust === true;
         settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" ? parsed.settings.autoAdjustLast : null;
@@ -3004,6 +3019,7 @@ clearBtn.addEventListener("click", () => {
     age: null,
     gender: "male",
     height: null,
+    startWeight: null,
     defaultModelSeen: DEFAULT_MODEL,
     autoAdjust: false,
     autoAdjustLast: null,
@@ -3110,6 +3126,7 @@ onboardStart.addEventListener("click", () => {
   settings.age = profile.age;
   settings.gender = normalizeGender(profile.gender);
   settings.height = profile.height;
+  settings.startWeight = profile.weightKg;
   settings.goals.weight = targetWeightFrom(profile.weightKg, profile.goalType);
   const defaults = computeDefaultGoals(profile);
   if (defaults) {
