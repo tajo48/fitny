@@ -626,7 +626,7 @@
             </select>
           </div>
         </div>
-        <p class="hint">Shows your current body weight: the average of the last 7 days of weigh-ins (looking further back one day at a time until 3 weigh-ins are found, or your start-screen weight if none exist). Editing it logs a weigh-in for the day selected on the Log tab. Also used by Automatic mode's static estimate (Mifflin-St Jeor) until you have enough logged data for a personalized target.</p>
+        <p class="hint">Shows your current body weight: the average of the last 7 days of weigh-ins (looking further back one day at a time until 3 weigh-ins are found, or your start-screen weight if none exist). Weigh-ins that jump more than 5 kg day-to-day are ignored as typos. Editing it logs a weigh-in for the day selected on the Log tab. Also used by Automatic mode's static estimate (Mifflin-St Jeor) until you have enough logged data for a personalized target.</p>
       </div>
 
       <div class="card">
@@ -1349,7 +1349,7 @@ function monthStartIso(iso) {
    today-based variant) so the ETA is part of the same snapshot. */
 function weightTrendEndingAt(iso) {
   const cutoff = shiftDate(iso, -14);
-  const entries = weightEntries().filter((e) => e.date >= cutoff && e.date <= iso);
+  const entries = plausibleWeightEntries().filter((e) => e.date >= cutoff && e.date <= iso);
   if (entries.length < 3) return null;
   const t0 = isoToDate(entries[0].date).getTime() / 86400000;
   const t1 = isoToDate(entries[entries.length - 1].date).getTime() / 86400000;
@@ -1828,10 +1828,14 @@ totalsEl.addEventListener("click", async (e) => {
 
 /* ---------- weight input ---------- */
 
-weightInput.addEventListener("change", () => {
-  const v = numOrNull(weightInput.value);
-  ensureDay(currentDate).weight = v;
+weightInput.addEventListener("input", () => {
+  // Live per keystroke: saving runs maybeAutoAdjust, so the kcal goal reacts
+  // to a new "today" weight the moment it's typed — no blur/Enter needed.
+  ensureDay(currentDate).weight = numOrNull(weightInput.value);
   saveDB();
+});
+weightInput.addEventListener("change", () => {
+  // Full refresh only once editing settles, so render() never fights typing.
   render();
 });
 
@@ -2360,13 +2364,36 @@ function weightEntries() {
     .map((d) => ({ date: d, weight: db.days[d].weight }));
 }
 
+/* A weigh-in jumping more than 5 kg from the last accepted one is almost
+   certainly a typo or scale glitch — such spikes are ignored everywhere a
+   weight is derived from (7-day average, trend, kcal estimates). A jump is
+   kept only when the next weigh-in backs the new level up, so a genuine
+   sustained shift (long logging gap, re-calibrated scale) is accepted again
+   as soon as it repeats — and a just-typed spike simply has no effect until
+   the following day confirms it. */
+function plausibleWeightEntries() {
+  const raw = weightEntries();
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const e = raw[i];
+    const last = out[out.length - 1];
+    if (!last || Math.abs(e.weight - last.weight) <= 5) {
+      out.push(e);
+      continue;
+    }
+    const next = raw[i + 1];
+    if (next && Math.abs(next.weight - e.weight) <= 5) out.push(e);
+  }
+  return out;
+}
+
 /* Current body weight = average of the weigh-ins in the last 7 days. If the
    last 7 days contain fewer than 3 weigh-ins, the window slides back one
    day at a time over all records until it covers 3 (or runs out of records,
    in which case everything found is averaged). With no weigh-in at all, the
    weight entered on the start screen is used. */
 function currentBodyWeight() {
-  const entries = weightEntries().filter((e) => e.date <= todayIso());
+  const entries = plausibleWeightEntries().filter((e) => e.date <= todayIso());
   if (!entries.length) return settings.startWeight;
   const cutoff = shiftDate(todayIso(), -6);
   let inWindow = entries.filter((e) => e.date >= cutoff);
