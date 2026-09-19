@@ -1934,6 +1934,9 @@ function refreshMealByTime() {
       render();
     }
     lastKnownToday = today;
+    // The auto-adjust windows (intake, weight trend) are anchored to today,
+    // so a new day is new input even without any logging — recalculate.
+    maybeAutoAdjust();
   }
   if (currentDate !== today || mealManuallySet) return;
   const meal = defaultMeal();
@@ -2731,10 +2734,7 @@ goalWeight.addEventListener("input", () => {
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
-  if (settings.autoAdjust) {
-    settings.autoAdjustLast = null;
-    maybeAutoAdjust();
-  }
+  if (settings.autoAdjust) maybeAutoAdjust();
 });
 
 /* ---------- automatic calorie adjustment ---------- */
@@ -2848,17 +2848,11 @@ function applyAutoMacros(kcal, weightKg) {
 }
 
 /* Runs after every data change (and at boot). Does nothing unless Automatic
-   is on. A successful personalized adjustment is stamped with today's date
-   so it runs at most once per day (daily weight noise can't make the goal
-   bounce around); the static fallback is left unstamped since it's
-   idempotent, so a personalized recalculation can still kick in the moment
-   enough data exists. */
+   is on. Every run recalculates from the current data — the estimate is
+   deterministic, so re-running on each change can't make the goal bounce;
+   instead the goals track new weigh-ins and logged food immediately. */
 function maybeAutoAdjust() {
   if (!settings.autoAdjust) return;
-  if (settings.autoAdjustLast === todayIso()) {
-    if (settings.autoAdjustNote) autoAdjustStatus.textContent = settings.autoAdjustNote;
-    return;
-  }
   const res = computeAutoAdjustment();
   if (!res.error) {
     const w = currentBodyWeight();
@@ -2867,7 +2861,6 @@ function maybeAutoAdjust() {
     if (w != null) settings.goals.weight = targetWeightFrom(w, settings.goalType);
     syncGoalInputs();
     renderWeightGoalHint();
-    settings.autoAdjustLast = todayIso();
     settings.autoAdjustNote =
       `Adjusted to ${res.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
     saveSettings();
@@ -2894,7 +2887,6 @@ function maybeAutoAdjust() {
 
 autoAdjustToggle.addEventListener("change", () => {
   settings.autoAdjust = autoAdjustToggle.checked;
-  settings.autoAdjustLast = null;
   saveSettings();
   if (settings.autoAdjust) {
     maybeAutoAdjust();
@@ -2910,10 +2902,7 @@ function onProfileChange() {
   settings.height = numOrNull(profileHeight.value);
   settings.gender = normalizeGender(profileGender.value);
   saveSettings();
-  if (settings.autoAdjust) {
-    settings.autoAdjustLast = null;
-    maybeAutoAdjust();
-  }
+  if (settings.autoAdjust) maybeAutoAdjust();
 }
 profileAge.addEventListener("input", onProfileChange);
 profileHeight.addEventListener("input", onProfileChange);
