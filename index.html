@@ -19,6 +19,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
   html {
+    background: #232634; /* no flash of black when the viewport resizes */
     overscroll-behavior: none;
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* old Edge/IE */
@@ -28,6 +29,7 @@
   body {
     background: #232634;
     min-height: 100%;
+    min-height: 100dvh; /* follow the real visible surface (fullscreen bar hide) */
     display: flex;
     flex-direction: column;
     align-items: center;
