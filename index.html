@@ -1342,6 +1342,18 @@ function monthStartIso(iso) {
   return dateToIso(new Date(d.getFullYear(), d.getMonth(), 1));
 }
 
+/* Per-day kcal totals on [fromIso, toIso] (both inclusive), oldest first,
+   one point per calendar day — so a week's worth lines up Mon..Sun in the
+   export card's bar chart even before every day has food logged. */
+function kcalPoints(fromIso, toIso) {
+  const pts = [];
+  if (fromIso > toIso) return pts;
+  for (let d = fromIso; d <= toIso; d = shiftDate(d, 1)) {
+    pts.push({ date: d, kcal: totalsFor(d).kcal });
+  }
+  return pts;
+}
+
 /* Least-squares fit of body weight over the 14 days ending at `iso` →
    kg/week trend. The fit resists single-day water-weight noise better
    than comparing two snapshots, and needs 3+ weigh-ins spread over 7+
@@ -1438,6 +1450,94 @@ function drawEtaBox(ctx, x, y, w, h, headline, goalStr, color, pts) {
   ctx.fill();
 }
 
+/* "WEEK KCAL" box — this week's calorie total against the weekly goal
+   (daily goal × 7) as the headline, with a 7-slot mini bar chart of daily
+   kcal and a dashed line at the daily goal. Bars tint green/red per day by
+   whether they landed toward/away from the goal (reversed for gain), blue
+   when no goal applies. Mirrors the GOAL ETA box so the two hang side by
+   side under the week / month chips. */
+function drawKcalBox(ctx, x, y, w, h, pts, dayGoal, goalType) {
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fillStyle = "#292c3c";
+  ctx.fill();
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#414559";
+  ctx.stroke();
+
+  const total = pts.reduce((a, p) => a + p.kcal, 0);
+  const weekGoal = dayGoal ? dayGoal * 7 : null;
+  const fmt = (n) => Math.round(n).toLocaleString("en-US");
+
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#a5adce";
+  ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "2px";
+  ctx.fillText("WEEK KCAL", x + 12, y + 10);
+  if (weekGoal) {
+    ctx.textAlign = "right";
+    ctx.font = "10px 'Bebas Neue', Impact, sans-serif";
+    ctx.letterSpacing = "1px";
+    ctx.fillText("GOAL " + fmt(weekGoal), x + w - 12, y + 10);
+  }
+  ctx.letterSpacing = "0px";
+
+  /* headline: green when the average logged day sits toward the goal
+     (under for lose, over for gain), red when it overshoots, gray with
+     no goal or nothing logged */
+  const logged = pts.filter((p) => p.kcal > 0);
+  let color = "#a5adce";
+  if (weekGoal && logged.length && (goalType === "lose" || goalType === "gain")) {
+    const avg = total / logged.length;
+    const good = goalType === "lose" ? avg <= dayGoal : avg >= dayGoal;
+    color = good ? "#a6d189" : "#e78284";
+  }
+
+  const headline = weekGoal ? fmt(total) + " / " + fmt(weekGoal) : fmt(total);
+  ctx.textAlign = "center";
+  ctx.fillStyle = color;
+  let size = 22;
+  ctx.font = size + "px 'Bebas Neue', Impact, sans-serif";
+  ctx.letterSpacing = "1px";
+  while (ctx.measureText(headline).width > w - 24 && size > 12) {
+    size -= 1;
+    ctx.font = size + "px 'Bebas Neue', Impact, sans-serif";
+  }
+  ctx.fillText(headline, x + w / 2, y + 30);
+  ctx.letterSpacing = "0px";
+
+  /* 7 weekday slots Mon..Sun — a bar per day with food logged, dashed
+     line at the daily goal; future / empty days just stay blank */
+  const sx = x + 10, sw = w - 20, sy = y + 42, sh = 19;
+  const slot = sw / 7;
+  let max = dayGoal || 0;
+  for (const p of pts) if (p.kcal > max) max = p.kcal;
+  if (max <= 0) return;
+  const barColor = (kcal) => {
+    if (!weekGoal || (goalType !== "lose" && goalType !== "gain")) return "#8caaee";
+    const good = goalType === "lose" ? kcal <= dayGoal : kcal >= dayGoal;
+    return good ? "#a6d189" : "#e78284";
+  };
+  for (let i = 0; i < 7; i++) {
+    const kcal = pts[i] ? pts[i].kcal : 0;
+    if (kcal <= 0) continue;
+    const bh = Math.max(2, (kcal / max) * sh);
+    ctx.fillStyle = barColor(kcal);
+    ctx.fillRect(sx + slot * i + slot * 0.2, sy + sh - bh, slot * 0.6, bh);
+  }
+  if (dayGoal) {
+    const gy = sy + sh - (dayGoal / max) * sh;
+    ctx.strokeStyle = "#a5adce";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(sx, gy);
+    ctx.lineTo(sx + sw, gy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
 /* Green when the change moves toward the goal type, red when away,
    gray for maintain / recomp / no data. */
 function trendColor(delta) {
@@ -1511,8 +1611,9 @@ function drawSideBox(ctx, x, y, w, h, label, value, pts, color) {
 /* A 620-wide "what happened today" card in the app's Catppuccin look:
    header with icon + date, kcal headline flanked by week / month weight
    chips (top weight + KG change + sparkline), goal-ETA box tucked under
-   month chip in the same frame and with the same trend sparkline,
-   optional weight chip, goal bars, GI
+   month chip in the same frame and with the same trend sparkline, week
+   kcal box under the week chip with a per-day bar chart vs the daily
+   goal, optional weight chip, goal bars, GI
    gauge, meal split, footer credit. The
    caller paints the background (full-bleed card) and scales the context
    2×; the height returned is the used space, measured by a 1x probe pass
@@ -1604,6 +1705,7 @@ function drawDaySummary(ctx) {
   const etaTrend = weightTrendEndingAt(currentDate);
   const goalW = g.weight;
   const goalType = settings.goalType;
+  let subDrawn = false; /* either box under the chips extends the block */
   if (etaTrend && typeof goalW === "number" && (goalType === "lose" || goalType === "gain")) {
     const wAll = weightEntries();
     let lastW = null;
@@ -1621,9 +1723,20 @@ function drawDaySummary(ctx) {
           ? etaLabel(Math.abs(remaining) / Math.abs(etaTrend.rateKgPerWeek))
           : "OFF TRACK";
       drawEtaBox(ctx, R - 148, rowY + 78, 148, 68, headline, goalStr, reached || onTrack ? "#a6d189" : "#e78284", etaTrend.pts);
-      y += 22; /* the box hangs below the chips — extend the block over it */
+      subDrawn = true;
     }
   }
+
+  /* week-kcal box — total calories this week vs the weekly goal, with a
+     per-day bar chart and the daily goal dashed across; mirrors the ETA
+     box on the right so the chips row stays symmetric. Shows whenever
+     anything was logged this week, goal or not. */
+  const kcalPts = kcalPoints(weekStartIso(currentDate), currentDate);
+  if (kcalPts.some((p) => p.kcal > 0)) {
+    drawKcalBox(ctx, L, rowY + 78, 148, 68, kcalPts, g.kcal || 0, settings.goalType);
+    subDrawn = true;
+  }
+  if (subDrawn) y += 22; /* a box hangs below the chips — extend the block over it */
 
   /* optional weight chip */
   const weight = day && typeof day.weight === "number" ? day.weight : null;
