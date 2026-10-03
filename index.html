@@ -2656,20 +2656,27 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") refreshMealByTime();
 });
 
+/* The "from history" list is derived straight from the meal log: walk the
+   days newest-first and each meal's items last-logged-first, keeping the
+   first sighting of each food. The result is exactly "your last meals",
+   each entry carrying the portion/macros from when it was last eaten. */
 function pastItems() {
-  const map = new Map();
-  for (const date of Object.keys(db.days).sort()) {
+  const seen = new Set();
+  const out = [];
+  for (const date of Object.keys(db.days).sort().reverse()) {
     const day = db.days[date];
-    for (const meal of MEALS) {
-      for (const it of day.meals[meal] || []) {
+    for (const meal of [...MEALS].reverse()) {
+      const list = day.meals?.[meal] || [];
+      for (let i = list.length - 1; i >= 0; i--) {
+        const it = list[i];
         const key = String(it.name || "").trim().toLowerCase();
-        if (!key) continue;
-        const count = (map.get(key)?.count || 0) + 1;
-        map.set(key, { name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, gi: it.gi, lastDate: date, count });
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ name: it.name, grams: it.grams, kcal: it.kcal, protein: it.protein, carbs: it.carbs, fat: it.fat, gi: it.gi, lastDate: date });
       }
     }
   }
-  return Array.from(map.values());
+  return out;
 }
 
 function historyRowHtml(it, i) {
@@ -2697,9 +2704,6 @@ function renderHistoryResults() {
   const query = historySearch.value.trim().toLowerCase();
   let items = pastItems();
   if (query) items = items.filter((it) => it.name.toLowerCase().includes(query));
-  /* Most recently eaten first: the thing you just logged is the thing you're
-     most likely to log again; frequency only breaks ties. */
-  items.sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : b.count - a.count));
   items = items.slice(0, 40);
   historyItemsCache = items;
   historyResultsEl.innerHTML = items.length
@@ -3164,25 +3168,64 @@ function extractMessageText(message) {
   return "";
 }
 
-function parseItemsFromText(raw) {
-  let jsonText = String(raw || "").trim();
-  const fence = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) jsonText = fence[1].trim();
-  let obj;
-  try {
-    obj = JSON.parse(jsonText);
-  } catch {
-    const start = jsonText.indexOf("{");
-    const end = jsonText.lastIndexOf("}");
-    if (start === -1 || end === -1) {
-      const preview = jsonText.slice(0, 140).trim();
-      throw new Error(preview ? `The model didn't return JSON — it said: "${preview}"` : "The model didn't return JSON (empty reply).");
-    }
-    obj = JSON.parse(jsonText.slice(start, end + 1));
+/* Models reply in more shapes than the prompt asks for: one JSON object,
+   several concatenated objects, a bare array, or several fenced blocks
+   (one per food, common with the web-search tool). Betting on a single
+   shape is what made multi-food replies collapse to just their first
+   item. Instead, scan the whole reply for balanced {...} spans — skipping
+   braces inside string literals — and harvest every item-shaped object
+   found, in order. */
+function harvestAiItems(v, out) {
+  if (Array.isArray(v)) {
+    v.forEach((x) => harvestAiItems(x, out));
+    return;
   }
-  const items = Array.isArray(obj.items) ? obj.items : Array.isArray(obj) ? obj : [];
-  if (!items.length) throw new Error("No items found in the response.");
-  return items.map((it) => ({
+  if (!v || typeof v !== "object") return;
+  if (Array.isArray(v.items)) {
+    v.items.forEach((x) => harvestAiItems(x, out));
+    return;
+  }
+  if (v.name != null) out.push(v);
+}
+
+function parseItemsFromText(raw) {
+  const text = String(raw || "");
+  const spans = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{") {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === "}" && depth > 0) {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        spans.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  const found = [];
+  for (const span of spans) {
+    try {
+      harvestAiItems(JSON.parse(span), found);
+    } catch {}
+  }
+  if (!found.length) {
+    const preview = text.slice(0, 140).trim();
+    throw new Error(preview ? `The model didn't return JSON — it said: "${preview}"` : "The model didn't return JSON (empty reply).");
+  }
+  return found.map((it) => ({
     name: String(it.name ?? "Item").slice(0, 80),
     grams: numOrNull(it.grams),
     kcal: numOrNull(it.kcal) ?? 0,
