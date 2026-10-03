@@ -2161,7 +2161,11 @@ waterInput.addEventListener("input", () => {
 waterCard.addEventListener("click", (e) => {
   const btn = e.target.closest("[data-delta]");
   if (!btn || !settings.waterTracking) return;
-  const next = Math.max(0, Math.round(waterAmount(currentDate) + num(btn.dataset.delta)));
+  // dataset values are ALWAYS strings — num() would coerce them to 0, making
+  // every quick button a silent no-op. numOrNull does the real parse.
+  const delta = numOrNull(btn.dataset.delta) ?? 0;
+  if (delta === 0) return;
+  const next = Math.max(0, Math.round(waterAmount(currentDate) + delta));
   ensureDay(currentDate).water = next;
   saveDB();
   renderWater();
