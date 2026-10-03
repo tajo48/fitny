@@ -1496,13 +1496,30 @@ function renderWater(syncInput = true) {
 
 /* ---------- medications ---------- */
 
-/* Med counts live on the day under `meds`, keyed by the med's settings id:
+/* Med logs live on the day under `meds`, keyed by the med's settings id:
    renaming a med keeps its history, and a count of 0 is deleted so days
-   stay lean. Days from before the feature existed simply have no `meds`. */
-function medCount(dateStr, id) {
+   stay lean. Each entry snapshots the dose label at log time
+   ({ c, dose }) so changing the dose in Settings never rewrites what past
+   days show; counts written before that shape existed are plain numbers. */
+function medEntry(dateStr, id) {
   const day = getDay(dateStr);
   const v = day && day.meds ? day.meds[id] : undefined;
-  return typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0;
+  if (typeof v === "number" && Number.isFinite(v)) return { c: Math.max(0, Math.round(v)), dose: null };
+  if (v && typeof v === "object" && typeof v.c === "number" && Number.isFinite(v.c)) {
+    return { c: Math.max(0, Math.round(v.c)), dose: typeof v.dose === "string" ? v.dose : null };
+  }
+  return { c: 0, dose: null };
+}
+
+function medCount(dateStr, id) {
+  return medEntry(dateStr, id).c;
+}
+
+/* The dose label for a given day: the snapshot taken when that day was
+   logged, falling back to the current dose for days with no snapshot
+   (legacy number counts, or nothing logged that day). */
+function medDoseFor(dateStr, id) {
+  return medEntry(dateStr, id).dose;
 }
 
 /* One full-width button per med: name + dose + count on top, goal bar under.
@@ -1510,6 +1527,7 @@ function medCount(dateStr, id) {
    at-goal / over-goal signals the water and macro bars use. */
 function medBtnHtml(m) {
   const c = medCount(currentDate, m.id);
+  const dose = medDoseFor(currentDate, m.id) ?? m.dose;
   const goal = m.goal && m.goal > 0 ? m.goal : null;
   const over = goal && c > goal;
   const done = goal && c >= goal;
@@ -1518,10 +1536,10 @@ function medBtnHtml(m) {
     ? `<span class="medBar"><span class="medFill" style="width:${Math.min(100, (c / goal) * 100)}%"></span></span>`
     : "";
   return `
-    <button type="button" class="medBtn${over ? " over" : done ? " done" : ""}" data-id="${esc(m.id)}" aria-label="${esc(m.name)}${m.dose ? ", " + esc(m.dose) : ""}: ${c}${goal ? " of " + goal : ""} doses taken. Tap adds one, hold removes one.">
+    <button type="button" class="medBtn${over ? " over" : done ? " done" : ""}" data-id="${esc(m.id)}" aria-label="${esc(m.name)}${dose ? ", " + esc(dose) : ""}: ${c}${goal ? " of " + goal : ""} doses taken. Tap adds one, hold removes one.">
       <span class="medTop">
         <span class="medName">${esc(m.name)}</span>
-        ${m.dose ? `<span class="medDose">${esc(m.dose)}</span>` : ""}
+        ${dose ? `<span class="medDose">${esc(dose)}</span>` : ""}
         <span class="medCount">${right}</span>
       </span>
       ${bar}
@@ -2122,12 +2140,14 @@ function drawDaySummary(ctx) {
     y += 46;
   }
 
-  /* medications — one row per configured med, only while tracking is on
-     and at least one is named: the exact row shape of the macro/water rows
-     (label left, count/goal right, bar underneath) in the meds mauve, so
-     the block reads as part of the same list. A small header sets it off
-     from the food rows; with tracking off (or no meds) nothing is drawn
-     and the export stays pixel-identical. */
+  /* medications — a compact pill grid, only while tracking is on and at
+     least one med is named. Each med is a cell: name (+ the dose logged that
+     day) over a dot per dose slot — filled = taken, hollow = to go, green at
+     the goal, red past it — with the count beside the dots. Reads like a
+     pill organizer and takes one 48px row per three meds, so the card grows
+     by about one meal-split row instead of a full goal row per med. With
+     tracking off (or no meds) nothing is drawn and the export stays
+     pixel-identical. */
   const meds = settings.medsTracking ? settings.meds.filter((m) => m.name.trim()) : [];
   if (meds.length) {
     ctx.textAlign = "left";
@@ -2136,31 +2156,72 @@ function drawDaySummary(ctx) {
     ctx.letterSpacing = "2px";
     ctx.fillText("MEDICATIONS", L, y);
     ctx.letterSpacing = "0px";
-    y += 26;
-    for (const m of meds) {
+    y += 24;
+    const cols = 3;
+    const cw = (R - L) / cols;
+    for (let i = 0; i < meds.length; i++) {
+      const m = meds[i];
       const c = medCount(currentDate, m.id);
       const goal = m.goal && m.goal > 0 ? m.goal : null;
-      const right = goal ? c + " / " + goal : String(c);
-      ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#a5adce";
-      const rightW = ctx.measureText(right).width;
-      // med names are user-typed — ellipsize so they can't run under the count
-      ctx.textAlign = "left";
+      const dose = medDoseFor(currentDate, m.id) ?? m.dose;
+      const cx = L + cw * (i % cols) + cw / 2;
+      const rowY = y + Math.floor(i / cols) * 48;
+
+      /* name + day's dose, centered, ellipsized to the cell */
+      ctx.textAlign = "center";
       ctx.fillStyle = "#c6d0f5";
-      let label = m.dose ? m.name + " · " + m.dose : m.name;
-      const maxW = (R - L) - rightW - 24;
+      ctx.font = "15px 'Bebas Neue', Impact, sans-serif";
+      ctx.letterSpacing = "1px";
+      let label = dose ? m.name + " · " + dose : m.name;
+      const maxW = cw - 14;
       if (ctx.measureText(label).width > maxW) {
         while (label.length > 1 && ctx.measureText(label + "…").width > maxW) label = label.slice(0, -1);
         label += "…";
       }
-      ctx.fillText(label, L, y);
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#a5adce";
-      ctx.fillText(right, R, y);
-      summaryBar(ctx, L, y + 14, R - L, c, goal, "#ca9ee6");
-      y += 46;
+      ctx.fillText(label, cx, rowY);
+      ctx.letterSpacing = "0px";
+
+      /* dots + count: text-only when there are too many slots to draw */
+      const slots = goal ? Math.max(goal, c) : c;
+      const countText = goal ? c + "/" + goal : String(c);
+      const dy = rowY + 22;
+      ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
+      const textW = ctx.measureText(countText).width;
+      if (slots >= 1 && slots <= 8) {
+        const r = 4.5;
+        const gap = 13;
+        const dotsW = (slots - 1) * gap + 2 * r;
+        const totalW = dotsW + 10 + textW;
+        let dx = cx - totalW / 2 + r;
+        for (let s = 0; s < slots; s++) {
+          const taken = s < c;
+          ctx.beginPath();
+          ctx.arc(dx, dy, r, 0, Math.PI * 2);
+          ctx.fillStyle = !taken
+            ? "#414559"
+            : goal && c > goal && s >= goal
+              ? "#e78284"
+              : goal && c >= goal
+                ? "#a6d189"
+                : "#ca9ee6";
+          ctx.fill();
+          if (!taken) {
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = "#51576d";
+            ctx.stroke();
+          }
+          dx += gap;
+        }
+        ctx.fillStyle = "#a5adce";
+        ctx.textAlign = "left";
+        ctx.fillText(countText, cx + totalW / 2 - textW, dy);
+      } else {
+        ctx.fillStyle = goal && c >= goal ? "#a6d189" : "#c6d0f5";
+        ctx.textAlign = "center";
+        ctx.fillText(countText, cx, dy);
+      }
     }
+    y += Math.ceil(meds.length / cols) * 48;
   }
 
   /* glycemic index gauge */
@@ -2380,7 +2441,10 @@ function medAdjust(id, delta) {
   const day = ensureDay(currentDate);
   if (!day.meds) day.meds = {};
   if (next === 0) delete day.meds[id];
-  else day.meds[id] = next;
+  else {
+    const m = medById(id);
+    day.meds[id] = { c: next, dose: m && typeof m.dose === "string" ? m.dose : null };
+  }
   saveDB();
   renderMeds();
 }
