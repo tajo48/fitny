@@ -176,7 +176,11 @@
   .weightGoalInline:empty { display: none; }
 
   /* Water card mirrors the weight card's layout (label + input row) and adds
-     the same goal bar the totals card uses, plus quick-add glass buttons. */
+     the same goal bar the totals card uses, plus quick-add glass buttons.
+     The explicit [hidden] rule is required: .weightcard's display:flex would
+     otherwise override the attribute (author rules beat the UA sheet) and
+     the card would show — dead — while tracking is off. */
+  #waterCard[hidden] { display: none; }
   .waterQuick { display: flex; gap: 8px; flex-wrap: wrap; }
 
   .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
@@ -490,11 +494,7 @@
         <input type="text" id="waterInput" inputmode="decimal" placeholder="0">
       </div>
       <div class="macroLegend" id="waterLegend"></div>
-      <div class="waterQuick">
-        <button type="button" class="small" data-delta="250">+250 ml</button>
-        <button type="button" class="small" data-delta="500">+500 ml</button>
-        <button type="button" class="small secondary" data-delta="-250">−250 ml</button>
-      </div>
+      <div class="waterQuick" id="waterQuick"></div>
     </div>
 
     <div class="card" id="totalsCard"></div>
@@ -723,14 +723,22 @@
         <div class="row">
           <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="text" id="goalWeight" inputmode="decimal" placeholder="e.g. 75"></div>
         </div>
-        <div class="row" style="flex-wrap:nowrap;">
-          <div class="field"><label for="goalWater">Water goal (ml)</label><input type="text" id="goalWater" inputmode="decimal" placeholder="e.g. 2000"></div>
-          <div class="field" style="flex:0 0 auto;">
-            <label>Water</label>
-            <label class="toggleRow"><input type="checkbox" id="waterToggle"> Track</label>
+        <div class="field">
+          <label for="goalWater">Water goal (ml)</label>
+          <div class="row" style="flex-wrap:nowrap;">
+            <input type="text" id="goalWater" inputmode="decimal" placeholder="e.g. 2000">
+            <label class="toggleRow">
+              <input type="checkbox" id="waterToggle">
+              Track water
+            </label>
           </div>
+          <div class="row" style="margin-top:8px;">
+            <div class="field"><label for="waterQuickA">Quick 1 (ml)</label><input type="text" id="waterQuickA" inputmode="decimal" placeholder="250"></div>
+            <div class="field"><label for="waterQuickB">Quick 2 (ml)</label><input type="text" id="waterQuickB" inputmode="decimal" placeholder="500"></div>
+            <div class="field"><label for="waterQuickC">Quick 3 (ml)</label><input type="text" id="waterQuickC" inputmode="decimal" placeholder="-250"></div>
+          </div>
+          <p class="hint" style="margin-top:2px;">Water tracking is optional and off by default. Enable it to add a Water card to the Log tab (daily total, this goal's bar, the quick buttons) and a Water row to the day-summary export. Quick buttons are amounts in ml — negative subtracts, blank or 0 hides the button. ~2000 ml/day is a common baseline.</p>
         </div>
-        <p class="hint" style="margin-bottom:10px;">Water tracking is optional and off by default — flip the toggle to get a Water card on the Log tab with quick +250/+500 ml buttons, a per-day total, and this goal's progress bar. As with the other goals, a blank goal keeps logging working but hides the bar; ~2000 ml/day is a common baseline.</p>
         <div class="field">
           <label for="goalTypeSelect">Goal</label>
           <div class="row" style="flex-wrap:nowrap;">
@@ -938,10 +946,10 @@ function loadSettings() {
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
       const startWeight = numOrNull(parsed.startWeight);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, waterTracking: parsed.waterTracking === true, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, waterTracking: parsed.waterTracking === true, waterQuickA: numOrNull(parsed.waterQuickA) ?? 250, waterQuickB: numOrNull(parsed.waterQuickB) ?? 500, waterQuickC: numOrNull(parsed.waterQuickC) ?? -250, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, waterTracking: false, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, waterTracking: false, waterQuickA: 250, waterQuickB: 500, waterQuickC: -250, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -1096,6 +1104,7 @@ const weightInput = document.getElementById("weightInput");
 const waterCard = document.getElementById("waterCard");
 const waterInput = document.getElementById("waterInput");
 const waterLegend = document.getElementById("waterLegend");
+const waterQuickEl = document.getElementById("waterQuick");
 const totalsEl = document.getElementById("totalsCard");
 const mealsWrap = document.getElementById("mealsWrap");
 
@@ -1142,6 +1151,9 @@ const goalFat = document.getElementById("goalFat");
 const goalWeight = document.getElementById("goalWeight");
 const goalWater = document.getElementById("goalWater");
 const waterToggle = document.getElementById("waterToggle");
+const waterQuickAInput = document.getElementById("waterQuickA");
+const waterQuickBInput = document.getElementById("waterQuickB");
+const waterQuickCInput = document.getElementById("waterQuickC");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
 const autoAdjustToggle = document.getElementById("autoAdjustToggle");
 const autoAdjustStatus = document.getElementById("autoAdjustStatus");
@@ -1181,7 +1193,13 @@ wireDecimalInput(profileWeight);
 wireDecimalInput(goalWeight);
 wireDecimalInput(waterInput);
 wireDecimalInput(goalWater);
+wireDecimalInput(waterQuickAInput);
+wireDecimalInput(waterQuickBInput);
+wireDecimalInput(waterQuickCInput);
 waterToggle.checked = settings.waterTracking;
+waterQuickAInput.value = settings.waterQuickA ?? "";
+waterQuickBInput.value = settings.waterQuickB ?? "";
+waterQuickCInput.value = settings.waterQuickC ?? "";
 
 /* ============================================================
    Rendering — Log tab
@@ -1355,8 +1373,16 @@ function waterAmount(dateStr) {
 
 /* Renders the Water card — entirely hidden unless tracking is on. The bar
    reuses the same goal-row markup as the totals card (blue = water), and
-   over-goal turns red exactly like the macro bars. `syncInput` is false
+   over-goal turns red exactly like the macro bars. Quick buttons are built
+   from the customizable settings (blank/0 hides one). `syncInput` is false
    while the user is typing in the input so the caret never jumps. */
+function waterQuickBtnHtml() {
+  return [settings.waterQuickA, settings.waterQuickB, settings.waterQuickC]
+    .filter((v) => typeof v === "number" && Number.isFinite(v) && v !== 0)
+    .map((v) => `<button type="button" class="small${v < 0 ? " secondary" : ""}" data-delta="${v}">${v > 0 ? "+" : "−"}${Math.abs(v)} ml</button>`)
+    .join("");
+}
+
 function renderWater(syncInput = true) {
   if (!settings.waterTracking) {
     waterCard.hidden = true;
@@ -1365,6 +1391,7 @@ function renderWater(syncInput = true) {
   waterCard.hidden = false;
   const amt = waterAmount(currentDate);
   if (syncInput) waterInput.value = Math.round(amt);
+  waterQuickEl.innerHTML = waterQuickBtnHtml();
   waterLegend.innerHTML = macroRowHtml("Water", "#8caaee", amt, settings.goals.water, "ml", true);
 }
 
@@ -1924,6 +1951,27 @@ function drawDaySummary(ctx) {
       R, y
     );
     summaryBar(ctx, L, y + 14, R - L, value, goal, color);
+    y += 46;
+  }
+
+  /* water row — appended to the macro rows only when tracking is enabled.
+     Identical row shape (label, value/goal on the right, bar underneath),
+     blue like the Log tab, ml instead of g — so the export grows by exactly
+     one row and is pixel-identical when water is off. */
+  if (settings.waterTracking) {
+    const wAmt = waterAmount(currentDate);
+    const wGoal = settings.goals.water;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#c6d0f5";
+    ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
+    ctx.fillText("Water", L, y);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#a5adce";
+    ctx.fillText(
+      wGoal ? Math.round(wAmt) + " / " + Math.round(wGoal) + " ml" : Math.round(wAmt) + " ml",
+      R, y
+    );
+    summaryBar(ctx, L, y + 14, R - L, wAmt, wGoal, "#8caaee");
     y += 46;
   }
 
@@ -3396,6 +3444,15 @@ goalWater.addEventListener("input", () => {
   saveSettings();
   renderWater();
 });
+/* Customizable quick buttons: any ml amount, sign decides add/subtract,
+ * blank or 0 hides that button. */
+[["waterQuickA", waterQuickAInput], ["waterQuickB", waterQuickBInput], ["waterQuickC", waterQuickCInput]].forEach(([key, input]) => {
+  input.addEventListener("input", () => {
+    settings[key] = numOrNull(input.value) ?? 0;
+    saveSettings();
+    if (settings.waterTracking) renderWater();
+  });
+});
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
@@ -3701,6 +3758,9 @@ function handleImportFile(file) {
         settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.settings.autoAdjustLast) ? parsed.settings.autoAdjustLast : null;
         settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
         settings.waterTracking = parsed.settings.waterTracking === true;
+        settings.waterQuickA = numOrNull(parsed.settings.waterQuickA) ?? 250;
+        settings.waterQuickB = numOrNull(parsed.settings.waterQuickB) ?? 500;
+        settings.waterQuickC = numOrNull(parsed.settings.waterQuickC) ?? -250;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -3710,6 +3770,9 @@ function handleImportFile(file) {
         setAddMode(settings.apiKey ? "ai" : "manual");
         autoAdjustToggle.checked = settings.autoAdjust;
         waterToggle.checked = settings.waterTracking;
+        waterQuickAInput.value = settings.waterQuickA ?? "";
+        waterQuickBInput.value = settings.waterQuickB ?? "";
+        waterQuickCInput.value = settings.waterQuickC ?? "";
         profileAge.value = settings.age ?? "";
         profileHeight.value = settings.height ?? "";
         profileGender.value = settings.gender;
@@ -3753,6 +3816,9 @@ clearBtn.addEventListener("click", () => {
     autoAdjustLast: null,
     autoAdjustNote: null,
     waterTracking: false,
+    waterQuickA: 250,
+    waterQuickB: 500,
+    waterQuickC: -250,
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -3764,6 +3830,9 @@ clearBtn.addEventListener("click", () => {
   goalTypeSelect.value = "maintain";
   autoAdjustToggle.checked = false;
   waterToggle.checked = false;
+  waterQuickAInput.value = 250;
+  waterQuickBInput.value = 500;
+  waterQuickCInput.value = -250;
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   profileAge.value = "";
   profileHeight.value = "";
