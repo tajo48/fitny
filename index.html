@@ -1784,10 +1784,11 @@ function drawEtaBox(ctx, x, y, w, h, headline, goalStr, color, pts) {
 /* "7 DAY KCAL" box — the last 7 days' calorie total against the weekly
    goal scaled to the days actually logged (daily goal × logged days —
    fasting days don't add budget) as the headline, with a 7-slot mini bar
-   chart of daily kcal and a dashed line at the daily goal. Bars tint
-   green/red per day by whether they landed toward/away from the goal
-   (reversed for gain), blue when no goal applies. Mirrors the GOAL ETA
-   box so the two hang side by side under the 7-day / 30-day chips. */
+   chart of daily kcal and a dashed line at the daily goal. Tracked days
+   get green/red bars (toward/away from the goal, reversed for gain, blue
+   when no goal applies); untracked days get a red dot on the baseline.
+   Mirrors the GOAL ETA box so the two hang side by side under the 7-day /
+   30-day chips. */
 function drawKcalBox(ctx, x, y, w, h, pts, dayGoal, goalType) {
   roundRect(ctx, x, y, w, h, 14);
   ctx.fillStyle = "#292c3c";
@@ -1841,7 +1842,8 @@ function drawKcalBox(ctx, x, y, w, h, pts, dayGoal, goalType) {
   ctx.letterSpacing = "0px";
 
   /* 7 slots oldest→today — a bar per day with food logged, dashed
-     line at the daily goal; empty days just stay blank */
+     line at the daily goal; days with nothing logged get a red dot on
+     the baseline so a gap reads as "didn't track", not "ate zero" */
   const sx = x + 10, sw = w - 20, sy = y + 42, sh = 19;
   const slot = sw / 7;
   let max = dayGoal || 0;
@@ -1854,7 +1856,14 @@ function drawKcalBox(ctx, x, y, w, h, pts, dayGoal, goalType) {
   };
   for (let i = 0; i < 7; i++) {
     const kcal = pts[i] ? pts[i].kcal : 0;
-    if (kcal <= 0) continue;
+    const cx = sx + slot * i + slot * 0.5;
+    if (kcal <= 0) {
+      ctx.fillStyle = "#e78284";
+      ctx.beginPath();
+      ctx.arc(cx, sy + sh - 2.5, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      continue;
+    }
     const bh = Math.max(2, (kcal / max) * sh);
     ctx.fillStyle = barColor(kcal);
     ctx.fillRect(sx + slot * i + slot * 0.2, sy + sh - bh, slot * 0.6, bh);
