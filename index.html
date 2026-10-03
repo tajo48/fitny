@@ -183,6 +183,50 @@
   #waterCard[hidden] { display: none; }
   .waterQuick { display: flex; gap: 8px; flex-wrap: wrap; }
 
+  /* Meds card mirrors the water card: same weightcard shell, hidden via the
+     explicit [hidden] rule (the class's display:flex would win otherwise).
+     Each med is one full-width tap target — name + dose + count on top, a
+     slim goal bar underneath when a doses/day goal is set. Count turns green
+     at the goal and red past it; the mauve fill matches the export card. */
+  #medsCard[hidden] { display: none; }
+  .medsHead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .medsHeadLabel { font-size: 14px; color: #a5adce; }
+  .medsList { display: flex; flex-direction: column; gap: 8px; }
+  .medBtn {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    width: 100%;
+    text-align: left;
+    background: #292c3c;
+    color: #c6d0f5;
+    padding: 10px 12px 9px;
+    -webkit-touch-callout: none; /* long-press must undo, not open the iOS callout */
+  }
+  button.medBtn:active:not(:disabled) { background: #292c3c; border-color: #ca9ee6; color: #c6d0f5; }
+  @media (hover: hover) {
+    button.medBtn:hover:not(:disabled) { background: #292c3c; border-color: #ca9ee6; color: #c6d0f5; }
+  }
+  .medBtn.undoing { border-color: #e78284; }
+  .medBtn.undoing .medCount { color: #e78284; }
+  .medTop { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .medName { font-size: 16px; overflow-wrap: anywhere; }
+  .medDose { font-size: 12px; color: #a5adce; overflow-wrap: anywhere; }
+  .medCount { margin-left: auto; font-size: 18px; flex: 0 0 auto; }
+  .medBtn.done .medCount { color: #a6d189; }
+  .medBtn.over .medCount { color: #e78284; }
+  .medBar { display: block; height: 7px; border-radius: 999px; background: #414559; overflow: hidden; }
+  .medFill { display: block; height: 100%; border-radius: 999px; background: #ca9ee6; transition: width 0.15s ease; }
+  .medBtn.over .medFill { background: #e78284; }
+
+  /* Settings: one editing row per med — name grows, dose follows, goal stays
+     narrow, × removes. Flex basis keeps it usable down to tiny screens. */
+  .medEdit { display: flex; gap: 8px; align-items: center; }
+  .medEdit .medNameInput { flex: 2 1 130px; }
+  .medEdit .medDoseInput { flex: 1 1 110px; }
+  .medEdit .medGoalInput { flex: 0 1 80px; }
+  .medEdit .medRemove { flex: 0 0 auto; }
+
   .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
@@ -497,6 +541,14 @@
       <div class="waterQuick" id="waterQuick"></div>
     </div>
 
+    <div class="card weightcard" id="medsCard" hidden>
+      <div class="medsHead">
+        <span class="medsHeadLabel">Medications</span>
+        <span class="hint">tap +1 · hold −1</span>
+      </div>
+      <div class="medsList" id="medsList"></div>
+    </div>
+
     <div class="card" id="totalsCard"></div>
 
     <div class="mealsWrap" id="mealsWrap"></div>
@@ -758,6 +810,21 @@
       </div>
 
       <div class="card">
+        <h3 style="margin-bottom:8px;">Medications</h3>
+        <div class="field">
+          <label class="toggleRow">
+            <input type="checkbox" id="medsToggle">
+            Track medications
+          </label>
+        </div>
+        <div class="field" style="margin-bottom:8px;">
+          <div id="medsEditList" style="display:flex; flex-direction:column; gap:8px;"></div>
+          <button id="medAdd" type="button" class="secondary small">+ Add medication</button>
+        </div>
+        <p class="hint">Medication tracking is optional and off by default. Each medication you add here gets its own button on the Log tab — tap to log one dose, hold to undo one (e.g. after a mis-tap). Dose is a free-text label like “500 mg”; “per day” is how many doses you aim for — it adds a progress bar, turns the count green when reached and red past it. Blank or 0 hides the bar. The list and every logged dose are included in the day-summary export, and in DB export/import.</p>
+      </div>
+
+      <div class="card">
         <h3 style="margin-bottom:8px;">Data</h3>
         <p class="hint">Export everything — log, weight, settings, API key and goals — as a JSON file, or import one on another device. Keep exported files private since they contain your API key.</p>
         <div class="dataBtns">
@@ -815,6 +882,31 @@ function saveDB() {
 
 function emptyGoals() {
   return { kcal: null, protein: null, carbs: null, fat: null, weight: null, water: null };
+}
+
+/* Sanitizes a saved/imported medication list: keeps only entries with a real
+   name, caps lengths, coerces the goal to a positive whole number (or null),
+   and re-ids duplicates so two meds can never share a day-count key. */
+function normalizeMeds(v) {
+  if (!Array.isArray(v)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const m of v.slice(0, 24)) {
+    if (!m || typeof m !== "object") continue;
+    const name = typeof m.name === "string" ? m.name.trim().slice(0, 40) : "";
+    if (!name) continue;
+    let id = typeof m.id === "string" && m.id ? m.id.slice(0, 24) : "";
+    if (!id || seen.has(id)) id = uid();
+    seen.add(id);
+    const goalNum = numOrNull(m.goal);
+    out.push({
+      id,
+      name,
+      dose: typeof m.dose === "string" ? m.dose.trim().slice(0, 40) : "",
+      goal: goalNum && goalNum > 0 ? Math.min(99, Math.round(goalNum)) : null,
+    });
+  }
+  return out;
 }
 
 const GOAL_TYPES = ["lose", "maintain", "recomp", "gain"];
@@ -946,10 +1038,10 @@ function loadSettings() {
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
       const startWeight = numOrNull(parsed.startWeight);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, waterTracking: parsed.waterTracking === true, waterQuickA: numOrNull(parsed.waterQuickA) ?? 250, waterQuickB: numOrNull(parsed.waterQuickB) ?? 500, waterQuickC: numOrNull(parsed.waterQuickC) ?? -250, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, waterTracking: parsed.waterTracking === true, waterQuickA: numOrNull(parsed.waterQuickA) ?? 250, waterQuickB: numOrNull(parsed.waterQuickB) ?? 500, waterQuickC: numOrNull(parsed.waterQuickC) ?? -250, medsTracking: parsed.medsTracking === true, meds: normalizeMeds(parsed.meds), goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, waterTracking: false, waterQuickA: 250, waterQuickB: 500, waterQuickC: -250, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, waterTracking: false, waterQuickA: 250, waterQuickB: 500, waterQuickC: -250, medsTracking: false, meds: [], goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -1105,6 +1197,8 @@ const waterCard = document.getElementById("waterCard");
 const waterInput = document.getElementById("waterInput");
 const waterLegend = document.getElementById("waterLegend");
 const waterQuickEl = document.getElementById("waterQuick");
+const medsCard = document.getElementById("medsCard");
+const medsListEl = document.getElementById("medsList");
 const totalsEl = document.getElementById("totalsCard");
 const mealsWrap = document.getElementById("mealsWrap");
 
@@ -1154,6 +1248,9 @@ const waterToggle = document.getElementById("waterToggle");
 const waterQuickAInput = document.getElementById("waterQuickA");
 const waterQuickBInput = document.getElementById("waterQuickB");
 const waterQuickCInput = document.getElementById("waterQuickC");
+const medsToggle = document.getElementById("medsToggle");
+const medsEditList = document.getElementById("medsEditList");
+const medAddBtn = document.getElementById("medAdd");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
 const autoAdjustToggle = document.getElementById("autoAdjustToggle");
 const autoAdjustStatus = document.getElementById("autoAdjustStatus");
@@ -1200,6 +1297,8 @@ waterToggle.checked = settings.waterTracking;
 waterQuickAInput.value = settings.waterQuickA ?? "";
 waterQuickBInput.value = settings.waterQuickB ?? "";
 waterQuickCInput.value = settings.waterQuickC ?? "";
+medsToggle.checked = settings.medsTracking;
+renderMedsEditList();
 
 /* ============================================================
    Rendering — Log tab
@@ -1395,6 +1494,53 @@ function renderWater(syncInput = true) {
   waterLegend.innerHTML = macroRowHtml("Water", "#8caaee", amt, settings.goals.water, "ml", true);
 }
 
+/* ---------- medications ---------- */
+
+/* Med counts live on the day under `meds`, keyed by the med's settings id:
+   renaming a med keeps its history, and a count of 0 is deleted so days
+   stay lean. Days from before the feature existed simply have no `meds`. */
+function medCount(dateStr, id) {
+  const day = getDay(dateStr);
+  const v = day && day.meds ? day.meds[id] : undefined;
+  return typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : 0;
+}
+
+/* One full-width button per med: name + dose + count on top, goal bar under.
+   Count goes green when the day's goal is reached, red past it — the same
+   at-goal / over-goal signals the water and macro bars use. */
+function medBtnHtml(m) {
+  const c = medCount(currentDate, m.id);
+  const goal = m.goal && m.goal > 0 ? m.goal : null;
+  const over = goal && c > goal;
+  const done = goal && c >= goal;
+  const right = goal ? `${c} / ${goal}` : String(c);
+  const bar = goal
+    ? `<span class="medBar"><span class="medFill" style="width:${Math.min(100, (c / goal) * 100)}%"></span></span>`
+    : "";
+  return `
+    <button type="button" class="medBtn${over ? " over" : done ? " done" : ""}" data-id="${esc(m.id)}" aria-label="${esc(m.name)}${m.dose ? ", " + esc(m.dose) : ""}: ${c}${goal ? " of " + goal : ""} doses taken. Tap adds one, hold removes one.">
+      <span class="medTop">
+        <span class="medName">${esc(m.name)}</span>
+        ${m.dose ? `<span class="medDose">${esc(m.dose)}</span>` : ""}
+        <span class="medCount">${right}</span>
+      </span>
+      ${bar}
+    </button>
+  `;
+}
+
+function renderMeds() {
+  if (!settings.medsTracking) {
+    medsCard.hidden = true;
+    return;
+  }
+  medsCard.hidden = false;
+  const meds = settings.meds.filter((m) => m.name.trim());
+  medsListEl.innerHTML = meds.length
+    ? meds.map(medBtnHtml).join("")
+    : `<p class="hint">No medications yet — add them in Settings.</p>`;
+}
+
 function render() {
   dateInput.value = currentDate;
   todayBtn.classList.toggle("current", currentDate === todayIso());
@@ -1406,6 +1552,7 @@ function render() {
   renderMeals();
   renderWeightGoalHint();
   renderWater();
+  renderMeds();
   if (activeTab === "history") {
     drawAllCharts();
     renderWeightList();
@@ -1975,6 +2122,47 @@ function drawDaySummary(ctx) {
     y += 46;
   }
 
+  /* medications — one row per configured med, only while tracking is on
+     and at least one is named: the exact row shape of the macro/water rows
+     (label left, count/goal right, bar underneath) in the meds mauve, so
+     the block reads as part of the same list. A small header sets it off
+     from the food rows; with tracking off (or no meds) nothing is drawn
+     and the export stays pixel-identical. */
+  const meds = settings.medsTracking ? settings.meds.filter((m) => m.name.trim()) : [];
+  if (meds.length) {
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#a5adce";
+    ctx.font = "15px 'Bebas Neue', Impact, sans-serif";
+    ctx.letterSpacing = "2px";
+    ctx.fillText("MEDICATIONS", L, y);
+    ctx.letterSpacing = "0px";
+    y += 26;
+    for (const m of meds) {
+      const c = medCount(currentDate, m.id);
+      const goal = m.goal && m.goal > 0 ? m.goal : null;
+      const right = goal ? c + " / " + goal : String(c);
+      ctx.font = "600 13px Verdana, 'DejaVu Sans', sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#a5adce";
+      const rightW = ctx.measureText(right).width;
+      // med names are user-typed — ellipsize so they can't run under the count
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#c6d0f5";
+      let label = m.dose ? m.name + " · " + m.dose : m.name;
+      const maxW = (R - L) - rightW - 24;
+      if (ctx.measureText(label).width > maxW) {
+        while (label.length > 1 && ctx.measureText(label + "…").width > maxW) label = label.slice(0, -1);
+        label += "…";
+      }
+      ctx.fillText(label, L, y);
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#a5adce";
+      ctx.fillText(right, R, y);
+      summaryBar(ctx, L, y + 14, R - L, c, goal, "#ca9ee6");
+      y += 46;
+    }
+  }
+
   /* glycemic index gauge */
   ctx.textAlign = "left";
   ctx.fillStyle = "#c6d0f5";
@@ -2169,6 +2357,66 @@ waterCard.addEventListener("click", (e) => {
   ensureDay(currentDate).water = next;
   saveDB();
   renderWater();
+});
+
+/* ---------- medications: tap +1, hold −1 ---------- */
+
+/* A press-and-hold (450 ms) on a med button removes one dose — the undo for
+   a mis-tap. Pointer events cover touch + mouse; the flag suppresses the
+   click that follows the held pointer so a hold never also adds one back.
+   contextmenu is prevented so mobile long-press menus can't steal it. */
+let medHoldTimer = null;
+let medHoldFired = false;
+
+function cancelMedHold() {
+  if (medHoldTimer) {
+    clearTimeout(medHoldTimer);
+    medHoldTimer = null;
+  }
+}
+
+function medAdjust(id, delta) {
+  const next = Math.max(0, medCount(currentDate, id) + delta);
+  const day = ensureDay(currentDate);
+  if (!day.meds) day.meds = {};
+  if (next === 0) delete day.meds[id];
+  else day.meds[id] = next;
+  saveDB();
+  renderMeds();
+}
+
+medsListEl.addEventListener("pointerdown", (e) => {
+  const btn = e.target.closest(".medBtn");
+  if (!btn || !settings.medsTracking) return;
+  medHoldFired = false;
+  medHoldTimer = setTimeout(() => {
+    medHoldFired = true;
+    const id = btn.dataset.id;
+    medAdjust(id, -1);
+    // medAdjust re-rendered the list, so flash the *fresh* button — the
+    // captured one is already detached and would never show the class.
+    const fresh = medsListEl.querySelector(`.medBtn[data-id="${CSS.escape(id)}"]`);
+    if (fresh) {
+      fresh.classList.add("undoing");
+      setTimeout(() => fresh.classList.remove("undoing"), 350);
+    }
+    if (navigator.vibrate) navigator.vibrate(20);
+  }, 450);
+});
+medsListEl.addEventListener("pointerup", cancelMedHold);
+medsListEl.addEventListener("pointercancel", cancelMedHold);
+medsListEl.addEventListener("pointerleave", cancelMedHold);
+medsListEl.addEventListener("contextmenu", (e) => {
+  if (e.target.closest(".medBtn")) e.preventDefault();
+});
+medsListEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".medBtn");
+  if (!btn || !settings.medsTracking) return;
+  if (medHoldFired) {
+    medHoldFired = false;
+    return;
+  }
+  medAdjust(btn.dataset.id, 1);
 });
 
 /* ---------- delete a logged item ---------- */
@@ -3457,6 +3705,67 @@ goalWater.addEventListener("input", () => {
     if (settings.waterTracking) renderWater();
   });
 });
+
+/* Meds: the edit list is rebuilt only when the list itself changes
+   (add/remove/import/clear) — never on keystrokes — so typing never fights
+   a re-render. Every keystroke saves and refreshes the Log-tab buttons. */
+function medById(id) {
+  return settings.meds.find((m) => m.id === id) || null;
+}
+
+function renderMedsEditList() {
+  medsEditList.innerHTML = settings.meds.map((m) => `
+    <div class="medEdit" data-id="${esc(m.id)}">
+      <input type="text" class="medNameInput" placeholder="e.g. Vitamin D" value="${esc(m.name)}" maxlength="40" aria-label="Medication name">
+      <input type="text" class="medDoseInput" placeholder="e.g. 500 mg" value="${esc(m.dose)}" maxlength="40" aria-label="Dose label">
+      <input type="text" class="medGoalInput" inputmode="numeric" placeholder="per day" value="${m.goal ?? ""}" aria-label="Doses per day">
+      <button type="button" class="itemDel medRemove" aria-label="Remove medication">×</button>
+    </div>
+  `).join("");
+}
+
+medsToggle.addEventListener("change", () => {
+  settings.medsTracking = medsToggle.checked;
+  saveSettings();
+  renderMeds();
+});
+
+medsEditList.addEventListener("input", (e) => {
+  const row = e.target.closest(".medEdit");
+  if (!row) return;
+  const m = medById(row.dataset.id);
+  if (!m) return;
+  const cls = e.target.classList;
+  if (cls.contains("medNameInput")) m.name = e.target.value.slice(0, 40);
+  else if (cls.contains("medDoseInput")) m.dose = e.target.value.slice(0, 40);
+  else if (cls.contains("medGoalInput")) {
+    const g = numOrNull(e.target.value);
+    m.goal = g && g > 0 ? Math.min(99, Math.round(g)) : null;
+  } else return;
+  saveSettings();
+  if (settings.medsTracking) renderMeds();
+});
+
+medsEditList.addEventListener("click", (e) => {
+  const btn = e.target.closest(".medRemove");
+  if (!btn) return;
+  const row = btn.closest(".medEdit");
+  const m = medById(row.dataset.id);
+  if (!m) return;
+  if (m.name.trim() && !confirm(`Remove "${m.name.trim()}"?`)) return;
+  settings.meds = settings.meds.filter((x) => x.id !== m.id);
+  saveSettings();
+  renderMedsEditList();
+  if (settings.medsTracking) renderMeds();
+});
+
+medAddBtn.addEventListener("click", () => {
+  settings.meds.push({ id: uid(), name: "", dose: "", goal: null });
+  saveSettings();
+  renderMedsEditList();
+  const first = medsEditList.querySelector(".medNameInput");
+  if (first) first.focus();
+});
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
@@ -3765,6 +4074,8 @@ function handleImportFile(file) {
         settings.waterQuickA = numOrNull(parsed.settings.waterQuickA) ?? 250;
         settings.waterQuickB = numOrNull(parsed.settings.waterQuickB) ?? 500;
         settings.waterQuickC = numOrNull(parsed.settings.waterQuickC) ?? -250;
+        settings.medsTracking = parsed.settings.medsTracking === true;
+        settings.meds = normalizeMeds(parsed.settings.meds);
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -3777,6 +4088,8 @@ function handleImportFile(file) {
         waterQuickAInput.value = settings.waterQuickA ?? "";
         waterQuickBInput.value = settings.waterQuickB ?? "";
         waterQuickCInput.value = settings.waterQuickC ?? "";
+        medsToggle.checked = settings.medsTracking;
+        renderMedsEditList();
         profileAge.value = settings.age ?? "";
         profileHeight.value = settings.height ?? "";
         profileGender.value = settings.gender;
@@ -3823,6 +4136,8 @@ clearBtn.addEventListener("click", () => {
     waterQuickA: 250,
     waterQuickB: 500,
     waterQuickC: -250,
+    medsTracking: false,
+    meds: [],
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -3837,6 +4152,8 @@ clearBtn.addEventListener("click", () => {
   waterQuickAInput.value = 250;
   waterQuickBInput.value = 500;
   waterQuickCInput.value = -250;
+  medsToggle.checked = false;
+  renderMedsEditList();
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   profileAge.value = "";
   profileHeight.value = "";
