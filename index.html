@@ -259,11 +259,35 @@
   .historyAdd { flex: 0 0 auto; }
 
   .addcard { display: flex; flex-direction: column; gap: 12px; }
-  .addModeSwitch { display: flex; gap: 8px; }
-  .modeBtn { flex: 1; background: transparent; color: #a5adce; }
+  /* Four modes now — wrap on narrow screens (2×2) instead of squishing. */
+  .addModeSwitch { display: flex; gap: 8px; flex-wrap: wrap; }
+  .modeBtn { flex: 1 1 120px; background: transparent; color: #a5adce; }
   .modeBtn.active { background: #8caaee; color: #292c3c; border-color: #8caaee; }
   .addForm { display: flex; flex-direction: column; gap: 8px; }
   .addForm[hidden] { display: none; }
+
+  /* ---------- barcode add ---------- */
+  .barcodeProduct { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 2px; border-top: 1px solid #414559; }
+  .barcodeHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .barcodeHead .itemName { flex: 1 1 auto; min-width: 0; }
+  .nutriBadge {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 6px;
+    font-family: "Bebas Neue", Impact, Haettenschweiler, "Arial Narrow", sans-serif;
+    font-size: 15px; color: #292c3c;
+  }
+  .scanVideoWrap { position: relative; border-radius: 6px; overflow: hidden; border: 2px solid #51576d; background: #292c3c; }
+  .scanVideoWrap video { display: block; width: 100%; max-height: 300px; object-fit: cover; }
+  .scanLine {
+    position: absolute; left: 12px; right: 12px; height: 2px; border-radius: 1px;
+    background: #8caaee; box-shadow: 0 0 8px #8caaee;
+    animation: scanSweep 2.2s ease-in-out infinite;
+  }
+  @keyframes scanSweep {
+    0%, 100% { top: 10%; }
+    50% { top: 88%; }
+  }
 
   .aiPreviewWrap { position: relative; display: inline-block; }
   #aiPreview { max-width: 160px; max-height: 160px; border-radius: 6px; border: 2px solid #51576d; display: block; }
@@ -372,7 +396,7 @@
     <div class="row">
       <div class="field">
         <label for="onboardWeight">Weight (kg)</label>
-        <input type="number" id="onboardWeight" step="0.1" inputmode="decimal" placeholder="e.g. 75">
+        <input type="text" id="onboardWeight" inputmode="decimal" placeholder="e.g. 75">
       </div>
       <div class="field">
         <label for="onboardHeight">Height (cm)</label>
@@ -415,6 +439,18 @@
   </div>
 </div>
 
+<div id="scanOverlay" class="modalOverlay" hidden>
+  <div class="modalCard">
+    <h2>Scan barcode</h2>
+    <div class="scanVideoWrap">
+      <video id="scanVideo" playsinline muted></video>
+      <span class="scanLine" aria-hidden="true"></span>
+    </div>
+    <p class="hint" id="scanStatus" style="margin:10px 0 0;">Point at the barcode…</p>
+    <button id="scanCancel" type="button" class="secondary" style="margin-top:10px;">Cancel</button>
+  </div>
+</div>
+
 <div class="wrap">
 
   <header class="topbar">
@@ -442,7 +478,7 @@
     <div class="card weightcard">
       <div class="weightcardRow">
         <label for="weightInput">Body weight (kg)<span class="weightGoalInline" id="weightGoalHint"></span></label>
-        <input type="number" id="weightInput" step="0.1" inputmode="decimal" placeholder="—">
+        <input type="text" id="weightInput" inputmode="decimal" placeholder="—">
       </div>
     </div>
 
@@ -455,6 +491,7 @@
       <div class="addModeSwitch">
         <button class="modeBtn active" data-mode="manual" type="button">Add by hand</button>
         <button class="modeBtn" data-mode="ai" type="button">Add with AI</button>
+        <button class="modeBtn" data-mode="barcode" type="button">Barcode</button>
         <button class="modeBtn" data-mode="history" type="button">From history</button>
       </div>
 
@@ -521,6 +558,28 @@
         </div>
         <p class="hint" id="aiStatus"></p>
         <div id="aiResults" hidden></div>
+      </div>
+
+      <div id="barcodeForm" class="addForm" hidden>
+        <div class="field">
+          <label for="barcodeMeal">Meal</label>
+          <select id="barcodeMeal">
+            <option value="breakfast">Breakfast</option>
+            <option value="lunch">Lunch</option>
+            <option value="dinner">Dinner</option>
+            <option value="snack">Snacks</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="barcodeInput">Barcode</label>
+          <div class="row" style="flex-wrap:nowrap;">
+            <input type="text" id="barcodeInput" inputmode="numeric" autocomplete="off" placeholder="e.g. 737628064502" style="flex:1 1 130px;">
+            <button type="button" id="barcodeScan" class="secondary" style="flex:0 0 auto;">Scan</button>
+            <button type="button" id="barcodeLookup" style="flex:0 0 auto;">Find</button>
+          </div>
+        </div>
+        <p class="hint" id="barcodeStatus">Type a barcode or scan it — nutrition comes from Open Food Facts, the free open food database.</p>
+        <div id="barcodeResult" hidden></div>
       </div>
 
       <div id="historyForm" class="addForm" hidden>
@@ -623,7 +682,7 @@
           <div class="field"><label for="profileHeight">Height (cm)</label><input type="number" id="profileHeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 175"></div>
         </div>
         <div class="row">
-          <div class="field"><label for="profileWeight">Body weight (kg)</label><input type="number" id="profileWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
+          <div class="field"><label for="profileWeight">Body weight (kg)</label><input type="text" id="profileWeight" inputmode="decimal" placeholder="e.g. 75"></div>
           <div class="field">
             <label for="profileGender">Gender</label>
             <select id="profileGender">
@@ -647,7 +706,7 @@
           <div class="field"><label for="goalFat">Fat (g)</label><input type="number" id="goalFat" inputmode="decimal" min="0"></div>
         </div>
         <div class="row">
-          <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="number" id="goalWeight" step="0.1" inputmode="decimal" min="0" placeholder="e.g. 75"></div>
+          <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="text" id="goalWeight" inputmode="decimal" placeholder="e.g. 75"></div>
         </div>
         <div class="field">
           <label for="goalTypeSelect">Goal</label>
@@ -663,7 +722,7 @@
               Automatic
             </label>
           </div>
-          <p class="hint" id="autoAdjustStatus" style="margin-top:6px;">Turn Automatic on to let Fitny recalculate your kcal goal from your goal type, your logged intake, and your weight trend over the last two weeks. While it's on, manual goal edits last until the next adjustment.</p>
+          <p class="hint" id="autoAdjustStatus" style="margin-top:6px;">Turn Automatic on to let Fitny manage your kcal goal: it blends your logged intake and weight trend with your profile estimate, rechecks once a week, and never moves the goal more than ±150 kcal at a time — no jumping from what you've been eating to a whole new number overnight. When your goal weight is reached, the goal switches to Maintain by itself. Manual edits hold until the next weekly check.</p>
         </div>
       </div>
 
@@ -703,6 +762,7 @@ const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash:nitro";
 const KNOWN_DEFAULT_MODELS = ["openai/gpt-4o-mini", "google/gemini-3.8-flash", DEFAULT_MODEL];
 const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_LABELS = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function emptyMeals() {
   return { breakfast: [], lunch: [], dinner: [], snack: [] };
@@ -751,6 +811,16 @@ const KCAL_PER_KG = 7700;
 /* The rate-based math above works in kg/week, but intake and TDEE are
    daily — so the kg↔kcal conversion needs the same unit: 7700 ÷ 7. */
 const KCAL_PER_KG_PER_DAY = KCAL_PER_KG / 7;
+/* Automatic mode recalculates on a weekly cadence — not on every keystroke —
+   and each weekly move is capped so the goal eases toward the computed
+   target instead of jumping hundreds of kcal after one odd week. */
+const AUTO_ADJUST_INTERVAL_DAYS = 7;
+const AUTO_MAX_STEP_KCAL = 150;
+/* The TDEE observed from intake + weight trend is blended with the static
+   Mifflin-St Jeor estimate: a week of suppressed intake (illness, meds,
+   travel) makes the observed number swing wildly, and the static anchor
+   keeps one strange week from dragging the target along with it. */
+const AUTO_TDEE_STATIC_WEIGHT = 0.5;
 /* Macro split per goal (fractions of kcal) for Automatic mode. Each goal
    gets its own proportions: lose/recomp skew high-protein to protect
    muscle, maintain is a classic 30/40/30, gain skews toward carbs for
@@ -845,7 +915,7 @@ function loadSettings() {
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
       const startWeight = numOrNull(parsed.startWeight);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
     }
   } catch {}
   return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
@@ -875,6 +945,19 @@ function numOrNull(v) {
   if (v === "" || v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/* Body-weight fields accept a comma as the decimal separator ("76,5" →
+   76.5): type="number" rejects commas outright in most locales, so those
+   inputs are plain text with a decimal keypad, and this keeps whatever is
+   typed parseable by rewriting commas to dots as they land. */
+function wireDecimalInput(input) {
+  input.addEventListener("input", () => {
+    if (!input.value.includes(",")) return;
+    const pos = input.selectionStart;
+    input.value = input.value.replace(/,/g, ".");
+    if (pos != null) input.setSelectionRange(pos, pos);
+  });
 }
 
 function uid() {
@@ -1064,6 +1147,9 @@ profileHeight.value = settings.height ?? "";
 profileGender.value = settings.gender;
 syncGoalInputs();
 syncAiAnalyzeButton();
+wireDecimalInput(weightInput);
+wireDecimalInput(profileWeight);
+wireDecimalInput(goalWeight);
 
 /* ============================================================
    Rendering — Log tab
@@ -1943,8 +2029,9 @@ totalsEl.addEventListener("click", async (e) => {
 /* ---------- weight input ---------- */
 
 weightInput.addEventListener("input", () => {
-  // Live per keystroke: saving runs maybeAutoAdjust, so the kcal goal reacts
-  // to a new "today" weight the moment it's typed — no blur/Enter needed.
+  // Live per keystroke: saving runs maybeAutoAdjust, which only checks the
+  // weekly cadence (or a reached goal weight) — the kcal goal itself no
+  // longer reacts to every typed weigh-in.
   ensureDay(currentDate).weight = numOrNull(weightInput.value);
   saveDB();
 });
@@ -1973,6 +2060,7 @@ mealsWrap.addEventListener("click", (e) => {
 const manualForm = document.getElementById("manualForm");
 const aiForm = document.getElementById("aiForm");
 const historyForm = document.getElementById("historyForm");
+const barcodeForm = document.getElementById("barcodeForm");
 
 /* Sends the user straight to the Settings tab and drops focus into the API
    key field — used any time AI mode is picked (or "Analyze" is clicked)
@@ -2004,9 +2092,13 @@ function setAddMode(mode) {
   document.querySelectorAll(".modeBtn").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
   manualForm.hidden = mode !== "manual";
   aiForm.hidden = mode !== "ai";
+  barcodeForm.hidden = mode !== "barcode";
   historyForm.hidden = mode !== "history";
   if (mode === "history") renderHistoryResults();
   if (mode === "ai") syncAiAnalyzeButton();
+  if (mode === "barcode" && !window.isSecureContext) {
+    setBarcodeStatus("Camera scanning needs HTTPS (or localhost) — typing the barcode works everywhere.", true);
+  }
 }
 
 document.querySelectorAll(".modeBtn").forEach((btn) => {
@@ -2024,7 +2116,23 @@ const historyResultsEl = document.getElementById("historyResults");
 const historyStatus = document.getElementById("historyStatus");
 let historyItemsCache = [];
 
-/* ---------- meal sync across the three add forms ---------- */
+/* ---------- add by barcode (Open Food Facts) ---------- */
+
+const barcodeMealSelect = document.getElementById("barcodeMeal");
+const barcodeInput = document.getElementById("barcodeInput");
+const barcodeScanBtn = document.getElementById("barcodeScan");
+const barcodeLookupBtn = document.getElementById("barcodeLookup");
+const barcodeStatus = document.getElementById("barcodeStatus");
+const barcodeResultEl = document.getElementById("barcodeResult");
+const scanOverlay = document.getElementById("scanOverlay");
+const scanVideo = document.getElementById("scanVideo");
+const scanStatusEl = document.getElementById("scanStatus");
+const scanCancelBtn = document.getElementById("scanCancel");
+let barcodeProduct = null;
+let scanStream = null;
+let scanRaf = 0;
+
+/* ---------- meal sync across the four add forms ---------- */
 
 /* One shared "current meal" drives the manual, AI, and history forms so
    they can never drift apart. It starts from the time of day and follows
@@ -2038,6 +2146,7 @@ let lastKnownToday = todayIso();
 function syncMealSelects() {
   manualMeal.value = currentMeal;
   aiMealSelect.value = currentMeal;
+  barcodeMealSelect.value = currentMeal;
   historyMealSelect.value = currentMeal;
 }
 
@@ -2053,7 +2162,9 @@ function refreshMealByTime() {
     }
     lastKnownToday = today;
     // The auto-adjust windows (intake, weight trend) are anchored to today,
-    // so a new day is new input even without any logging — recalculate.
+    // so a new day can make the weekly check come due — and a goal weight
+    // may have been reached overnight. maybeAutoAdjust decides whether
+    // either warrants acting on.
     maybeAutoAdjust();
   }
   if (currentDate !== today || mealManuallySet) return;
@@ -2082,6 +2193,7 @@ function onMealSelectChange(e) {
 }
 manualMeal.addEventListener("change", onMealSelectChange);
 aiMealSelect.addEventListener("change", onMealSelectChange);
+barcodeMealSelect.addEventListener("change", onMealSelectChange);
 historyMealSelect.addEventListener("change", onMealSelectChange);
 
 syncMealSelects();
@@ -2134,7 +2246,9 @@ function renderHistoryResults() {
   const query = historySearch.value.trim().toLowerCase();
   let items = pastItems();
   if (query) items = items.filter((it) => it.name.toLowerCase().includes(query));
-  items.sort((a, b) => b.count - a.count || (a.lastDate < b.lastDate ? 1 : -1));
+  /* Most recently eaten first: the thing you just logged is the thing you're
+     most likely to log again; frequency only breaks ties. */
+  items.sort((a, b) => (a.lastDate < b.lastDate ? 1 : a.lastDate > b.lastDate ? -1 : b.count - a.count));
   items = items.slice(0, 40);
   historyItemsCache = items;
   historyResultsEl.innerHTML = items.length
@@ -2165,6 +2279,289 @@ historyResultsEl.addEventListener("click", (e) => {
   saveDB();
   historyStatus.textContent = `Added "${it.name}" to ${MEAL_LABELS[meal]}.`;
   render();
+});
+
+/* ---------- barcode add — Open Food Facts ---------- */
+
+/* Nutrition per grade badge, mapped onto the app's own traffic-light
+   palette: a/b green, c yellow, d/e red. */
+const NUTRISCORE_COLORS = { a: "#a6d189", b: "#a6d189", c: "#e5c890", d: "#e78284", e: "#e78284" };
+
+function normBarcode(s) {
+  return String(s || "").replace(/\D+/g, "");
+}
+
+/* Same comma→dot normalization as wireDecimalInput, but callable on fields
+   that are re-created dynamically inside the product card. */
+function normalizeDecimalField(input) {
+  if (!input.value.includes(",")) return;
+  const pos = input.selectionStart;
+  input.value = input.value.replace(/,/g, ".");
+  if (pos != null) input.setSelectionRange(pos, pos);
+}
+
+function setBarcodeStatus(msg, isError = false) {
+  barcodeStatus.textContent = msg;
+  barcodeStatus.style.color = isError ? "#e78284" : "";
+}
+
+/* Best display name for a product: name with brand prefix (when the name
+   doesn't already start with it), falling back to either alone, then to the
+   bare barcode — many OFF entries are sparsely filled. */
+function offProductName(p, code) {
+  const name = String(p.product_name || p.product_name_en || p.generic_name || "").trim();
+  const brand = String(p.brands || "").split(",")[0].trim();
+  const full = brand && name && !name.toLowerCase().startsWith(brand.toLowerCase()) ? `${brand} ${name}` : name || brand;
+  return full || `Barcode ${code}`;
+}
+
+/* Serving size in grams, from OFF's parsed serving_quantity when present,
+   otherwise pulled out of the serving_size string ("30 g", "1.5 oz" loses). */
+function offServingGrams(p) {
+  const q = numOrNull(p.serving_quantity);
+  if (q != null && q > 0) return q;
+  const m = String(p.serving_size || "").match(/(\d+(?:[.,]\d+)?)\s*(?:g|gr|grams?|ml)\b/i);
+  return m ? numOrNull(m[1].replace(",", ".")) : null;
+}
+
+async function lookupBarcode() {
+  const code = normBarcode(barcodeInput.value);
+  if (code.length < 6) {
+    setBarcodeStatus("Type or scan a barcode first (digits only).", true);
+    return;
+  }
+  setBarcodeStatus(`Looking up ${code} on Open Food Facts…`);
+  barcodeProduct = null;
+  barcodeResultEl.hidden = true;
+  try {
+    const res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`);
+    const data = await res.json().catch(() => null);
+    const p = data && data.product;
+    if (!res.ok || !p || data.status !== 1) {
+      setBarcodeStatus(
+        data && data.status === 0
+          ? `No product found for ${code} — it may not be in Open Food Facts yet (anyone can add it there).`
+          : `Lookup failed (${res.status || "network"}) — try again.`,
+        true,
+      );
+      return;
+    }
+    const n = p.nutriments || {};
+    // Some products only carry energy in kJ — 4.184 kJ ≈ 1 kcal.
+    const kcal100 = numOrNull(n["energy-kcal_100g"]) ?? (n["energy_100g"] != null ? Math.round(num(n["energy_100g"]) / 4.184) : null);
+    const per100 = {
+      kcal: kcal100,
+      protein: numOrNull(n["proteins_100g"]),
+      carbs: numOrNull(n["carbohydrates_100g"]),
+      fat: numOrNull(n["fat_100g"]),
+    };
+    if (per100.kcal == null && per100.protein == null && per100.carbs == null && per100.fat == null) {
+      setBarcodeStatus(`"${offProductName(p, code)}" has no nutrition data on Open Food Facts — add it there or log it by hand.`, true);
+      return;
+    }
+    const grade = typeof p.nutriscore_grade === "string" ? p.nutriscore_grade.toLowerCase() : "";
+    barcodeProduct = {
+      code,
+      name: offProductName(p, code),
+      per100,
+      grade: NUTRISCORE_COLORS[grade] ? grade : null,
+      servingGrams: offServingGrams(p),
+    };
+    renderBarcodeResult();
+    setBarcodeStatus("");
+  } catch (err) {
+    setBarcodeStatus(`Network error — ${err.message}. Check your connection and try again.`, true);
+  }
+}
+
+function renderBarcodeResult() {
+  const p = barcodeProduct;
+  if (!p) {
+    barcodeResultEl.hidden = true;
+    barcodeResultEl.innerHTML = "";
+    return;
+  }
+  const badge = p.grade
+    ? `<span class="nutriBadge" style="background:${NUTRISCORE_COLORS[p.grade]}" title="Nutri-Score ${p.grade.toUpperCase()}">${p.grade.toUpperCase()}</span>`
+    : "";
+  const bits = [];
+  if (p.per100.kcal != null) bits.push(`${Math.round(p.per100.kcal)} kcal`);
+  if (p.per100.protein != null) bits.push(`${Math.round(p.per100.protein)} g protein`);
+  if (p.per100.carbs != null) bits.push(`${Math.round(p.per100.carbs)} g carbs`);
+  if (p.per100.fat != null) bits.push(`${Math.round(p.per100.fat)} g fat`);
+  const servingBtn = p.servingGrams
+    ? `<button type="button" class="secondary small" id="barcodeServing">1 serving (${Math.round(p.servingGrams * 10) / 10} g)</button>`
+    : "";
+  barcodeResultEl.innerHTML = `
+    <div class="barcodeProduct">
+      <div class="barcodeHead">
+        <span class="itemName">${esc(p.name)}</span>
+        ${badge}
+      </div>
+      <span class="itemSub"><span>per 100 g: ${esc(bits.join(" · "))}</span></span>
+      <div class="row" style="flex-wrap:nowrap;">
+        <div class="field" style="flex:1 1 130px;"><label for="barcodeAmount">Amount eaten (g)</label><input type="text" id="barcodeAmount" inputmode="decimal" autocomplete="off" value="100"></div>
+        ${servingBtn ? `<div class="field" style="flex:0 0 auto;justify-content:flex-end;"><label>&nbsp;</label>${servingBtn}</div>` : ""}
+      </div>
+      <p class="hint" id="barcodeTotals"></p>
+      <button type="button" id="barcodeAdd">Add item</button>
+    </div>
+  `;
+  barcodeResultEl.hidden = false;
+  updateBarcodeTotals();
+  const amountEl = document.getElementById("barcodeAmount");
+  amountEl.focus();
+  amountEl.select();
+}
+
+function barcodeAmount() {
+  const el = document.getElementById("barcodeAmount");
+  return el ? numOrNull(el.value) : null;
+}
+
+function updateBarcodeTotals() {
+  const p = barcodeProduct;
+  const el = document.getElementById("barcodeTotals");
+  if (!p || !el) return;
+  const amt = barcodeAmount();
+  if (amt == null || !(amt > 0)) {
+    el.textContent = "Enter how much of it you ate.";
+    return;
+  }
+  const f = amt / 100;
+  el.textContent = `${Math.round(num(p.per100.kcal) * f)} kcal · ${Math.round(num(p.per100.protein) * f)} g protein · ${Math.round(num(p.per100.carbs) * f)} g carbs · ${Math.round(num(p.per100.fat) * f)} g fat`;
+}
+
+function addBarcodeItem() {
+  const p = barcodeProduct;
+  if (!p) return;
+  const amt = barcodeAmount();
+  if (amt == null || !(amt > 0)) {
+    setBarcodeStatus("Enter how much of it you ate first.", true);
+    document.getElementById("barcodeAmount")?.focus();
+    return;
+  }
+  refreshMealByTime();
+  const meal = currentMeal;
+  const f = amt / 100;
+  const r1 = (x) => Math.round(x * 10) / 10;
+  // kcal straight from the label when it's there; otherwise derived from
+  // the macros, exactly like the manual form's "auto" behavior.
+  const kcal = p.per100.kcal != null ? Math.round(p.per100.kcal * f) : Math.round((num(p.per100.protein) * 4 + num(p.per100.carbs) * 4 + num(p.per100.fat) * 9) * f);
+  ensureDay(currentDate).meals[meal].push({
+    id: uid(),
+    name: p.name,
+    grams: r1(amt),
+    kcal,
+    protein: r1(num(p.per100.protein) * f),
+    carbs: r1(num(p.per100.carbs) * f),
+    fat: r1(num(p.per100.fat) * f),
+    gi: null,
+  });
+  saveDB();
+  setBarcodeStatus(`Added "${p.name}" (${r1(amt)} g) to ${MEAL_LABELS[meal]} — adjust the amount to log more of it.`);
+  const amountEl = document.getElementById("barcodeAmount");
+  if (amountEl) amountEl.value = 100;
+  updateBarcodeTotals();
+  render();
+}
+
+/* The product card is rebuilt per lookup, so its fields are handled by
+   delegation: comma normalization + live totals on typing, serving preset
+   and the add button on click. */
+barcodeResultEl.addEventListener("input", (e) => {
+  if (e.target.id !== "barcodeAmount") return;
+  normalizeDecimalField(e.target);
+  updateBarcodeTotals();
+});
+barcodeResultEl.addEventListener("click", (e) => {
+  if (e.target.closest("#barcodeServing")) {
+    const el = document.getElementById("barcodeAmount");
+    if (el && barcodeProduct && barcodeProduct.servingGrams) {
+      el.value = barcodeProduct.servingGrams;
+      updateBarcodeTotals();
+    }
+    return;
+  }
+  if (e.target.closest("#barcodeAdd")) addBarcodeItem();
+});
+
+barcodeLookupBtn.addEventListener("click", lookupBarcode);
+barcodeInput.addEventListener("input", () => {
+  const clean = normBarcode(barcodeInput.value);
+  if (clean !== barcodeInput.value) barcodeInput.value = clean;
+});
+barcodeInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    lookupBarcode();
+  }
+});
+
+/* Camera scanning via the BarcodeDetector API (Chromium browsers, secure
+   contexts). Everything else — iOS Safari, plain-HTTP LAN serving — falls
+   back to typing the code, which the status line explains instead of just
+   failing silently. */
+async function startScan() {
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !("BarcodeDetector" in window)) {
+    setBarcodeStatus("Camera scanning isn't available here (needs HTTPS + a supported browser) — type the barcode instead.", true);
+    return;
+  }
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" } }, audio: false });
+  } catch (err) {
+    setBarcodeStatus(`Camera unavailable (${err.name || err.message}) — type the barcode instead.`, true);
+    return;
+  }
+  scanOverlay.hidden = false;
+  scanVideo.srcObject = scanStream;
+  try {
+    await scanVideo.play();
+  } catch {}
+  scanStatusEl.textContent = "Point at the barcode…";
+  let detector;
+  try {
+    detector = new BarcodeDetector({ formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128"] });
+  } catch {
+    detector = new BarcodeDetector();
+  }
+  const tick = async () => {
+    if (!scanStream) return;
+    try {
+      const codes = await detector.detect(scanVideo);
+      if (codes.length) {
+        const code = normBarcode(codes[0].rawValue);
+        stopScan();
+        if (code) {
+          barcodeInput.value = code;
+          lookupBarcode();
+        }
+        return;
+      }
+    } catch {}
+    scanRaf = requestAnimationFrame(tick);
+  };
+  scanRaf = requestAnimationFrame(tick);
+}
+
+function stopScan() {
+  if (scanRaf) {
+    cancelAnimationFrame(scanRaf);
+    scanRaf = 0;
+  }
+  if (scanStream) {
+    scanStream.getTracks().forEach((t) => t.stop());
+    scanStream = null;
+  }
+  scanVideo.srcObject = null;
+  scanOverlay.hidden = true;
+}
+
+barcodeScanBtn.addEventListener("click", startScan);
+scanCancelBtn.addEventListener("click", stopScan);
+/* Don't keep the camera lit when the app goes to the background mid-scan. */
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") stopScan();
 });
 
 /* ---------- manual add ---------- */
@@ -2734,11 +3131,13 @@ function renderWeightList() {
     ? entries.map((e) => `
         <div class="weightRow">
           <span class="wDate">${e.date}</span>
-          <input type="number" step="0.1" value="${e.weight}" data-date="${e.date}" class="wEdit">
+          <input type="text" inputmode="decimal" value="${e.weight}" data-date="${e.date}" class="wEdit">
           <button data-date="${e.date}" class="wDel secondary small" type="button">Delete</button>
         </div>
       `).join("")
     : `<p class="hint">No entries yet — set your weight from the Log tab.</p>`;
+  // Re-created on every render, so the comma→dot normalizer is re-attached.
+  weightListEl.querySelectorAll(".wEdit").forEach(wireDecimalInput);
 }
 
 weightListEl.addEventListener("change", (e) => {
@@ -2875,7 +3274,7 @@ goalWeight.addEventListener("input", () => {
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
-  if (settings.autoAdjust) maybeAutoAdjust();
+  if (settings.autoAdjust) maybeAutoAdjust(true, true);
 });
 
 /* ---------- automatic calorie adjustment ---------- */
@@ -2905,26 +3304,46 @@ function weightTrendLast14Days() {
   return weightTrendEndingAt(todayIso());
 }
 
+/* Static maintenance estimate from the saved profile (Mifflin-St Jeor,
+   falling back to kcal/kg when the profile is incomplete) — the anchor that
+   keeps one weird observed week from yanking the personalized estimate. */
+function staticMaintenanceKcal() {
+  const w = currentBodyWeight() ?? numOrNull(weightInput.value);
+  if (w == null || !(w > 0)) return null;
+  if (settings.age != null && settings.age > 0 && settings.height != null && settings.height > 0) {
+    return bmrMifflinStJeor(w, settings.height, settings.age, settings.gender) * ACTIVITY_MULTIPLIER;
+  }
+  return w * MAINTENANCE_KCAL_PER_KG;
+}
+
 /* Turns "what actually happened" (intake + weight trend) into a new kcal
    goal for the chosen goal type:
      1. estimate real TDEE from intake and observed weight change
         (intake − TDEE ≈ 1100 kcal × kg/week, i.e. 7700 kcal/kg ÷ 7 days),
+        then blend it 50/50 with the static profile estimate — a week of
+        suppressed intake (meds, illness) otherwise reads as a tiny TDEE,
+        and the app would overshoot the correction,
      2. add back the desired weekly rate for the goal,
-     3. clamp to sane bounds and cap each step at ±20% so one noisy week
-        can't yank the goal around wildly. */
-function computeAutoAdjustment() {
+     3. clamp to sane bounds, and — unless `unclamped` (explicit user action
+        like toggling Automatic on or switching goal type) — cap each move
+        at ±150 kcal so the goal eases toward the target over weeks. */
+function computeAutoAdjustment(unclamped = false) {
   const trend = weightTrendLast14Days();
   if (!trend) return { error: "needs at least 3 weigh-ins spanning 7+ days in the last two weeks." };
   const intake = avgKcalLast14Days();
   if (intake == null) return { error: "needs at least 3 days of food logged in the last two weeks." };
-  const tdee = Math.min(4500, Math.max(1400, intake - KCAL_PER_KG_PER_DAY * trend.rateKgPerWeek));
+  const observed = Math.min(4500, Math.max(1400, intake - KCAL_PER_KG_PER_DAY * trend.rateKgPerWeek));
+  const anchor = staticMaintenanceKcal();
+  const tdee = anchor != null ? observed + (anchor - observed) * AUTO_TDEE_STATIC_WEIGHT : observed;
   const desired = AUTO_GOAL_RATE[normalizeGoalType(settings.goalType)];
   let target = tdee + KCAL_PER_KG_PER_DAY * desired;
   target = Math.min(6000, Math.max(1200, target));
   target = Math.min(tdee * 1.2, Math.max(tdee * 0.8, target));
-  const current = settings.goals.kcal;
-  if (current && current > 0) {
-    target = Math.min(current * 1.2, Math.max(current * 0.8, target));
+  if (!unclamped) {
+    const current = settings.goals.kcal;
+    if (current && current > 0) {
+      target = Math.min(current + AUTO_MAX_STEP_KCAL, Math.max(current - AUTO_MAX_STEP_KCAL, target));
+    }
   }
   return {
     kcal: Math.round(target / 10) * 10,
@@ -2988,25 +3407,81 @@ function applyAutoMacros(kcal, weightKg) {
   goalFat.value = fat;
 }
 
-/* Runs after every data change (and at boot). Does nothing unless Automatic
-   is on. Every run recalculates from the current data — the estimate is
-   deterministic, so re-running on each change can't make the goal bounce;
-   instead the goals track new weigh-ins and logged food immediately. */
-function maybeAutoAdjust() {
+/* The finish line: true once the smoothed current weight has actually
+   arrived at the saved goal weight (a quarter-kilo of tolerance so one
+   salty day can't leave you stranded just above the line). Maintain and
+   recomp have no finish line, so they never trigger. */
+function goalWeightReached() {
+  const goal = settings.goals.weight;
+  if (typeof goal !== "number" || !Number.isFinite(goal)) return false;
+  const w = currentBodyWeight();
+  if (w == null) return false;
+  if (settings.goalType === "lose") return w <= goal + 0.25;
+  if (settings.goalType === "gain") return w >= goal - 0.25;
+  return false;
+}
+
+function autoAdjustDueToday() {
+  const last = settings.autoAdjustLast;
+  if (!last || !ISO_DATE_RE.test(last)) return true;
+  return todayIso() >= shiftDate(last, AUTO_ADJUST_INTERVAL_DAYS);
+}
+
+/* Applies a computed kcal target end-to-end: macros, goal inputs, status
+   note, persistence, and the visible totals. The goal weight is a finish
+   line, not a moving target — it is only ever auto-filled while empty and
+   never nudged while you work toward it. */
+function applyAutoGoals(kcal, message) {
+  const w = currentBodyWeight();
+  settings.goals.kcal = kcal;
+  applyAutoMacros(kcal, w);
+  if (settings.goals.weight == null && w != null) settings.goals.weight = targetWeightFrom(w, settings.goalType);
+  settings.autoAdjustLast = todayIso();
+  settings.autoAdjustNote = `${message} — now ${kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f).`;
+  goalTypeSelect.value = settings.goalType;
+  syncGoalInputs();
+  renderWeightGoalHint();
+  saveSettings();
+  renderTotals();
+  autoAdjustStatus.textContent = settings.autoAdjustNote;
+}
+
+/* Runs after every data change (and at boot) but only *acts* on explicit
+   triggers (`now` — toggling Automatic on, switching goal type, editing the
+   profile) or at most once a week — plus the one event that outranks the
+   calendar: actually reaching the goal weight, which switches the goal to
+   Maintain right away so the lost (or gained) weight stays put. Between
+   those moments the stored goal is left exactly as it is. */
+function maybeAutoAdjust(now = false, unclamped = false) {
   if (!settings.autoAdjust) return;
-  const res = computeAutoAdjustment();
+
+  if (goalWeightReached()) {
+    settings.goalType = "maintain";
+    const res = computeAutoAdjustment(true);
+    if (!res.error) {
+      applyAutoGoals(res.kcal, `Goal weight reached — switched to Maintain (avg intake ${res.intake}, est. TDEE ${res.tdee})`);
+    } else {
+      const fb = staticGoalEstimate();
+      if (!fb) {
+        goalTypeSelect.value = settings.goalType;
+        settings.autoAdjustNote = "Goal weight reached — switched to Maintain, but there isn't enough logged data for a target yet; keep logging.";
+        saveSettings();
+        autoAdjustStatus.textContent = settings.autoAdjustNote;
+        return;
+      }
+      applyAutoGoals(fb.kcal, `Goal weight reached — switched to Maintain, static estimate (${res.error})`);
+    }
+    return;
+  }
+
+  if (!now && !autoAdjustDueToday()) return;
+
+  const res = computeAutoAdjustment(unclamped || !settings.goals.kcal);
   if (!res.error) {
-    const w = currentBodyWeight();
-    settings.goals.kcal = res.kcal;
-    applyAutoMacros(res.kcal, w);
-    if (w != null) settings.goals.weight = targetWeightFrom(w, settings.goalType);
-    syncGoalInputs();
-    renderWeightGoalHint();
-    settings.autoAdjustNote =
-      `Adjusted to ${res.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week.`;
-    saveSettings();
-    renderTotals();
-    autoAdjustStatus.textContent = settings.autoAdjustNote;
+    applyAutoGoals(
+      res.kcal,
+      `Weekly adjustment — avg intake ${res.intake}, est. TDEE ${res.tdee}, weight trend ${res.rate >= 0 ? "+" : ""}${res.rate} kg/week`,
+    );
     return;
   }
   const fallback = staticGoalEstimate();
@@ -3014,23 +3489,17 @@ function maybeAutoAdjust() {
     autoAdjustStatus.textContent = "Automatic is on, but can't estimate anything yet — log a body weight (Log tab) to get a static target.";
     return;
   }
-  settings.goals.kcal = fallback.kcal;
-  applyAutoMacros(fallback.kcal, fallback.weightKg);
-  if (fallback.weight != null) settings.goals.weight = fallback.weight;
-  syncGoalInputs();
-  renderWeightGoalHint();
-  settings.autoAdjustNote =
-    `Static estimate: ${fallback.kcal} kcal (${settings.goals.protein}p / ${settings.goals.carbs}c / ${settings.goals.fat}f) from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error}).`;
-  saveSettings();
-  renderTotals();
-  autoAdjustStatus.textContent = settings.autoAdjustNote;
+  applyAutoGoals(
+    fallback.kcal,
+    `Static estimate from your weight, goal, and profile — not enough logged data yet for a personalized target (${res.error})`,
+  );
 }
 
 autoAdjustToggle.addEventListener("change", () => {
   settings.autoAdjust = autoAdjustToggle.checked;
   saveSettings();
   if (settings.autoAdjust) {
-    maybeAutoAdjust();
+    maybeAutoAdjust(true, true);
   } else {
     autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   }
@@ -3043,7 +3512,9 @@ function onProfileChange() {
   settings.height = numOrNull(profileHeight.value);
   settings.gender = normalizeGender(profileGender.value);
   saveSettings();
-  if (settings.autoAdjust) maybeAutoAdjust();
+  // Profile edits feed the static anchor, so recompute right away — but
+  // clamped (±150), since mid-typing values shouldn't yank the goal.
+  if (settings.autoAdjust) maybeAutoAdjust(true, false);
 }
 profileAge.addEventListener("input", onProfileChange);
 profileHeight.addEventListener("input", onProfileChange);
@@ -3102,7 +3573,7 @@ function handleImportFile(file) {
         settings.startWeight = numOrNull(parsed.settings.startWeight);
         settings.goals = { ...emptyGoals(), ...(parsed.settings.goals || {}) };
         settings.autoAdjust = parsed.settings.autoAdjust === true;
-        settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" ? parsed.settings.autoAdjustLast : null;
+        settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.settings.autoAdjustLast) ? parsed.settings.autoAdjustLast : null;
         settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
@@ -3190,6 +3661,7 @@ const onboardStart = document.getElementById("onboardStart");
 const onboardImport = document.getElementById("onboardImport");
 const onboardImportFile = document.getElementById("onboardImportFile");
 const onboardInstall = document.getElementById("onboardInstall");
+wireDecimalInput(onboardWeight);
 
 function onboardProfile() {
   return {
