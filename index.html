@@ -268,8 +268,6 @@
 
   /* ---------- barcode add ---------- */
   .barcodeProduct { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 2px; border-top: 1px solid #414559; }
-  .barcodeHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .barcodeHead .itemName { flex: 1 1 auto; min-width: 0; }
   .nutriBadge {
     flex: 0 0 auto;
     display: inline-flex; align-items: center; justify-content: center;
@@ -2374,6 +2372,31 @@ async function lookupBarcode() {
   }
 }
 
+/* Scales the product's per-100 g nutrition to a given amount — the single
+   source of truth shared by the live preview and the actual add, so the
+   colored totals you see are exactly the numbers that get logged. */
+function barcodeNutritionFor(amt) {
+  const p = barcodeProduct;
+  const f = amt / 100;
+  const protein = num(p.per100.protein) * f;
+  const carbs = num(p.per100.carbs) * f;
+  const fat = num(p.per100.fat) * f;
+  const kcal = p.per100.kcal != null ? num(p.per100.kcal) * f : protein * 4 + carbs * 4 + fat * 9;
+  return { kcal, protein, carbs, fat };
+}
+
+/* Same color-coded macro dots as every logged/AI item row: green protein,
+   red carbs, yellow fat, plus the estimated-GI dot. Macros the product
+   doesn't declare are simply left out rather than shown as 0. */
+function macroDotsHtml({ protein, carbs, fat }, gi = true) {
+  let html = "";
+  if (protein != null) html += `<span><i class="dot" style="background:#a6d189"></i>${Math.round(protein)}</span>`;
+  if (carbs != null) html += `<span><i class="dot" style="background:#e78284"></i>${Math.round(carbs)}</span>`;
+  if (fat != null) html += `<span><i class="dot" style="background:#e5c890"></i>${Math.round(fat)}</span>`;
+  if (gi) html += giDotHtml({ protein, carbs, fat });
+  return html;
+}
+
 function renderBarcodeResult() {
   const p = barcodeProduct;
   if (!p) {
@@ -2384,26 +2407,28 @@ function renderBarcodeResult() {
   const badge = p.grade
     ? `<span class="nutriBadge" style="background:${NUTRISCORE_COLORS[p.grade]}" title="Nutri-Score ${p.grade.toUpperCase()}">${p.grade.toUpperCase()}</span>`
     : "";
-  const bits = [];
-  if (p.per100.kcal != null) bits.push(`${Math.round(p.per100.kcal)} kcal`);
-  if (p.per100.protein != null) bits.push(`${Math.round(p.per100.protein)} g protein`);
-  if (p.per100.carbs != null) bits.push(`${Math.round(p.per100.carbs)} g carbs`);
-  if (p.per100.fat != null) bits.push(`${Math.round(p.per100.fat)} g fat`);
   const servingBtn = p.servingGrams
     ? `<button type="button" class="secondary small" id="barcodeServing">1 serving (${Math.round(p.servingGrams * 10) / 10} g)</button>`
     : "";
   barcodeResultEl.innerHTML = `
     <div class="barcodeProduct">
-      <div class="barcodeHead">
-        <span class="itemName">${esc(p.name)}</span>
+      <div class="itemRow">
+        <div class="itemMain">
+          <span class="itemName">${esc(p.name)}</span>
+          <span class="itemSub">
+            <span>per 100 g${p.per100.kcal != null ? ` · ${Math.round(p.per100.kcal)} kcal` : ""}</span>
+          </span>
+        </div>
+        <div class="itemMacros">
+          ${macroDotsHtml(p.per100, false)}
+        </div>
         ${badge}
       </div>
-      <span class="itemSub"><span>per 100 g: ${esc(bits.join(" · "))}</span></span>
       <div class="row" style="flex-wrap:nowrap;">
         <div class="field" style="flex:1 1 130px;"><label for="barcodeAmount">Amount eaten (g)</label><input type="text" id="barcodeAmount" inputmode="decimal" autocomplete="off" value="100"></div>
         ${servingBtn ? `<div class="field" style="flex:0 0 auto;justify-content:flex-end;"><label>&nbsp;</label>${servingBtn}</div>` : ""}
       </div>
-      <p class="hint" id="barcodeTotals"></p>
+      <div class="itemRow" id="barcodeTotals"></div>
       <button type="button" id="barcodeAdd">Add item</button>
     </div>
   `;
@@ -2420,16 +2445,23 @@ function barcodeAmount() {
 }
 
 function updateBarcodeTotals() {
-  const p = barcodeProduct;
   const el = document.getElementById("barcodeTotals");
-  if (!p || !el) return;
+  if (!barcodeProduct || !el) return;
   const amt = barcodeAmount();
   if (amt == null || !(amt > 0)) {
-    el.textContent = "Enter how much of it you ate.";
+    el.innerHTML = `<div class="itemMain"><span class="itemSub">Enter how much of it you ate.</span></div>`;
     return;
   }
-  const f = amt / 100;
-  el.textContent = `${Math.round(num(p.per100.kcal) * f)} kcal · ${Math.round(num(p.per100.protein) * f)} g protein · ${Math.round(num(p.per100.carbs) * f)} g carbs · ${Math.round(num(p.per100.fat) * f)} g fat`;
+  const n = barcodeNutritionFor(amt);
+  el.innerHTML = `
+    <div class="itemMain">
+      <span class="itemName">${Math.round(amt * 10) / 10} g total</span>
+      <span class="itemSub"><span>${Math.round(n.kcal)} kcal</span></span>
+    </div>
+    <div class="itemMacros">
+      ${macroDotsHtml(n)}
+    </div>
+  `;
 }
 
 function addBarcodeItem() {
@@ -2443,19 +2475,16 @@ function addBarcodeItem() {
   }
   refreshMealByTime();
   const meal = currentMeal;
-  const f = amt / 100;
+  const n = barcodeNutritionFor(amt);
   const r1 = (x) => Math.round(x * 10) / 10;
-  // kcal straight from the label when it's there; otherwise derived from
-  // the macros, exactly like the manual form's "auto" behavior.
-  const kcal = p.per100.kcal != null ? Math.round(p.per100.kcal * f) : Math.round((num(p.per100.protein) * 4 + num(p.per100.carbs) * 4 + num(p.per100.fat) * 9) * f);
   ensureDay(currentDate).meals[meal].push({
     id: uid(),
     name: p.name,
     grams: r1(amt),
-    kcal,
-    protein: r1(num(p.per100.protein) * f),
-    carbs: r1(num(p.per100.carbs) * f),
-    fat: r1(num(p.per100.fat) * f),
+    kcal: Math.round(n.kcal),
+    protein: r1(n.protein),
+    carbs: r1(n.carbs),
+    fat: r1(n.fat),
     gi: null,
   });
   saveDB();
