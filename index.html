@@ -175,6 +175,10 @@
   .weightGoalInline { font-size: 12px; color: #a5adce; }
   .weightGoalInline:empty { display: none; }
 
+  /* Water card mirrors the weight card's layout (label + input row) and adds
+     the same goal bar the totals card uses, plus quick-add glass buttons. */
+  .waterQuick { display: flex; gap: 8px; flex-wrap: wrap; }
+
   .totalsTop { display: flex; align-items: baseline; gap: 8px; justify-content: center; margin-bottom: 10px; }
   .totalsKcal { font-family: "Bebas Neue", Impact, sans-serif; font-size: 40px; color: #c6d0f5; letter-spacing: 1px; }
   .totalsKcalLabel { font-size: 13px; color: #a5adce; text-transform: uppercase; letter-spacing: 1px; }
@@ -480,6 +484,19 @@
       </div>
     </div>
 
+    <div class="card weightcard" id="waterCard" hidden>
+      <div class="weightcardRow">
+        <label for="waterInput">Water (ml)</label>
+        <input type="text" id="waterInput" inputmode="decimal" placeholder="0">
+      </div>
+      <div class="macroLegend" id="waterLegend"></div>
+      <div class="waterQuick">
+        <button type="button" class="small" data-delta="250">+250 ml</button>
+        <button type="button" class="small" data-delta="500">+500 ml</button>
+        <button type="button" class="small secondary" data-delta="-250">−250 ml</button>
+      </div>
+    </div>
+
     <div class="card" id="totalsCard"></div>
 
     <div class="mealsWrap" id="mealsWrap"></div>
@@ -706,6 +723,14 @@
         <div class="row">
           <div class="field"><label for="goalWeight">Body weight (kg)</label><input type="text" id="goalWeight" inputmode="decimal" placeholder="e.g. 75"></div>
         </div>
+        <div class="row" style="flex-wrap:nowrap;">
+          <div class="field"><label for="goalWater">Water goal (ml)</label><input type="text" id="goalWater" inputmode="decimal" placeholder="e.g. 2000"></div>
+          <div class="field" style="flex:0 0 auto;">
+            <label>Water</label>
+            <label class="toggleRow"><input type="checkbox" id="waterToggle"> Track</label>
+          </div>
+        </div>
+        <p class="hint" style="margin-bottom:10px;">Water tracking is optional and off by default — flip the toggle to get a Water card on the Log tab with quick +250/+500 ml buttons, a per-day total, and this goal's progress bar. As with the other goals, a blank goal keeps logging working but hides the bar; ~2000 ml/day is a common baseline.</p>
         <div class="field">
           <label for="goalTypeSelect">Goal</label>
           <div class="row" style="flex-wrap:nowrap;">
@@ -781,7 +806,7 @@ function saveDB() {
 }
 
 function emptyGoals() {
-  return { kcal: null, protein: null, carbs: null, fat: null, weight: null };
+  return { kcal: null, protein: null, carbs: null, fat: null, weight: null, water: null };
 }
 
 const GOAL_TYPES = ["lose", "maintain", "recomp", "gain"];
@@ -913,10 +938,10 @@ function loadSettings() {
       const gender = normalizeGender(parsed.gender);
       const height = numOrNull(parsed.height);
       const startWeight = numOrNull(parsed.startWeight);
-      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, goals };
+      return { apiKey: parsed.apiKey || "", model, goalType, age, gender, height, startWeight, defaultModelSeen: DEFAULT_MODEL, autoAdjust: parsed.autoAdjust === true, autoAdjustLast: typeof parsed.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.autoAdjustLast) ? parsed.autoAdjustLast : null, autoAdjustNote: typeof parsed.autoAdjustNote === "string" ? parsed.autoAdjustNote : null, waterTracking: parsed.waterTracking === true, goals };
     }
   } catch {}
-  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, goals: emptyGoals() };
+  return { apiKey: "", model: DEFAULT_MODEL, goalType: "maintain", age: null, gender: "male", height: null, startWeight: null, defaultModelSeen: DEFAULT_MODEL, autoAdjust: false, autoAdjustLast: null, autoAdjustNote: null, waterTracking: false, goals: emptyGoals() };
 }
 
 function saveSettings() {
@@ -1068,6 +1093,9 @@ const prevDayBtn = document.getElementById("prevDay");
 const nextDayBtn = document.getElementById("nextDay");
 const todayBtn = document.getElementById("todayBtn");
 const weightInput = document.getElementById("weightInput");
+const waterCard = document.getElementById("waterCard");
+const waterInput = document.getElementById("waterInput");
+const waterLegend = document.getElementById("waterLegend");
 const totalsEl = document.getElementById("totalsCard");
 const mealsWrap = document.getElementById("mealsWrap");
 
@@ -1112,6 +1140,8 @@ const goalProtein = document.getElementById("goalProtein");
 const goalCarbs = document.getElementById("goalCarbs");
 const goalFat = document.getElementById("goalFat");
 const goalWeight = document.getElementById("goalWeight");
+const goalWater = document.getElementById("goalWater");
+const waterToggle = document.getElementById("waterToggle");
 const goalTypeSelect = document.getElementById("goalTypeSelect");
 const autoAdjustToggle = document.getElementById("autoAdjustToggle");
 const autoAdjustStatus = document.getElementById("autoAdjustStatus");
@@ -1134,6 +1164,7 @@ function syncGoalInputs() {
   goalCarbs.value = settings.goals.carbs ?? "";
   goalFat.value = settings.goals.fat ?? "";
   goalWeight.value = settings.goals.weight ?? "";
+  goalWater.value = settings.goals.water ?? "";
 }
 
 apiKeyInput.value = settings.apiKey;
@@ -1148,6 +1179,9 @@ syncAiAnalyzeButton();
 wireDecimalInput(weightInput);
 wireDecimalInput(profileWeight);
 wireDecimalInput(goalWeight);
+wireDecimalInput(waterInput);
+wireDecimalInput(goalWater);
+waterToggle.checked = settings.waterTracking;
 
 /* ============================================================
    Rendering — Log tab
@@ -1310,6 +1344,30 @@ function renderWeightGoalHint() {
   weightGoalHint.textContent = goal ? ` · Goal: ${goal} kg` : "";
 }
 
+/* ---------- water ---------- */
+
+/* Water lives directly on the day (like weight), in ml. Days from before
+   the feature existed simply have no field → 0. */
+function waterAmount(dateStr) {
+  const day = getDay(dateStr);
+  return day && typeof day.water === "number" ? day.water : 0;
+}
+
+/* Renders the Water card — entirely hidden unless tracking is on. The bar
+   reuses the same goal-row markup as the totals card (blue = water), and
+   over-goal turns red exactly like the macro bars. `syncInput` is false
+   while the user is typing in the input so the caret never jumps. */
+function renderWater(syncInput = true) {
+  if (!settings.waterTracking) {
+    waterCard.hidden = true;
+    return;
+  }
+  waterCard.hidden = false;
+  const amt = waterAmount(currentDate);
+  if (syncInput) waterInput.value = Math.round(amt);
+  waterLegend.innerHTML = macroRowHtml("Water", "#8caaee", amt, settings.goals.water, "ml", true);
+}
+
 function render() {
   dateInput.value = currentDate;
   todayBtn.classList.toggle("current", currentDate === todayIso());
@@ -1320,6 +1378,7 @@ function render() {
   renderTotals();
   renderMeals();
   renderWeightGoalHint();
+  renderWater();
   if (activeTab === "history") {
     drawAllCharts();
     renderWeightList();
@@ -2036,6 +2095,28 @@ weightInput.addEventListener("input", () => {
 weightInput.addEventListener("change", () => {
   // Full refresh only once editing settles, so render() never fights typing.
   render();
+});
+
+/* ---------- water input ---------- */
+
+/* Same live-edit pattern as the weight input: every keystroke writes the
+   day's total; quick buttons bump it by a glass/bottle. Saving runs
+   maybeAutoAdjust, which is cadence-gated and ignores water entirely. */
+waterInput.addEventListener("input", () => {
+  if (!settings.waterTracking) return;
+  const v = numOrNull(waterInput.value);
+  ensureDay(currentDate).water = Math.max(0, Math.round(v ?? 0));
+  saveDB();
+  renderWater(false);
+});
+
+waterCard.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-delta]");
+  if (!btn || !settings.waterTracking) return;
+  const next = Math.max(0, Math.round(waterAmount(currentDate) + num(btn.dataset.delta)));
+  ensureDay(currentDate).water = next;
+  saveDB();
+  renderWater();
 });
 
 /* ---------- delete a logged item ---------- */
@@ -3300,6 +3381,21 @@ goalWeight.addEventListener("input", () => {
   renderWeightGoalHint();
   if (activeTab === "history") drawWeightChart();
 });
+
+/* Water: off by default. Enabling it with no goal set seeds a common
+   2000 ml baseline (editable, or blank to log without a bar). */
+waterToggle.addEventListener("change", () => {
+  settings.waterTracking = waterToggle.checked;
+  if (settings.waterTracking && settings.goals.water == null) settings.goals.water = 2000;
+  goalWater.value = settings.goals.water ?? "";
+  saveSettings();
+  renderWater();
+});
+goalWater.addEventListener("input", () => {
+  settings.goals.water = numOrNull(goalWater.value);
+  saveSettings();
+  renderWater();
+});
 goalTypeSelect.addEventListener("change", () => {
   settings.goalType = goalTypeSelect.value;
   saveSettings();
@@ -3604,6 +3700,7 @@ function handleImportFile(file) {
         settings.autoAdjust = parsed.settings.autoAdjust === true;
         settings.autoAdjustLast = typeof parsed.settings.autoAdjustLast === "string" && ISO_DATE_RE.test(parsed.settings.autoAdjustLast) ? parsed.settings.autoAdjustLast : null;
         settings.autoAdjustNote = typeof parsed.settings.autoAdjustNote === "string" ? parsed.settings.autoAdjustNote : null;
+        settings.waterTracking = parsed.settings.waterTracking === true;
         saveSettings();
         apiKeyInput.value = settings.apiKey;
         modelInput.value = settings.model;
@@ -3612,6 +3709,7 @@ function handleImportFile(file) {
         syncAiAnalyzeButton();
         setAddMode(settings.apiKey ? "ai" : "manual");
         autoAdjustToggle.checked = settings.autoAdjust;
+        waterToggle.checked = settings.waterTracking;
         profileAge.value = settings.age ?? "";
         profileHeight.value = settings.height ?? "";
         profileGender.value = settings.gender;
@@ -3654,6 +3752,7 @@ clearBtn.addEventListener("click", () => {
     autoAdjust: false,
     autoAdjustLast: null,
     autoAdjustNote: null,
+    waterTracking: false,
     goals: emptyGoals(),
   });
   aiPending = [];
@@ -3664,6 +3763,7 @@ clearBtn.addEventListener("click", () => {
   modelInput.value = DEFAULT_MODEL;
   goalTypeSelect.value = "maintain";
   autoAdjustToggle.checked = false;
+  waterToggle.checked = false;
   autoAdjustStatus.textContent = "Automatic is off — kcal and macro goals stay whatever you set.";
   profileAge.value = "";
   profileHeight.value = "";
